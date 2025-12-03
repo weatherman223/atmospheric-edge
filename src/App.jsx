@@ -812,6 +812,27 @@ const SportsBettingModelPro = () => {
     // Try exact match first
     if (teams[espnName]) return espnName;
 
+    // Normalize function - handle common abbreviations and variations
+    const normalize = (name) => {
+      return name
+        .toLowerCase()
+        .replace(/\bst\.?\b/gi, 'state')  // St. or St -> state
+        .replace(/\buniv\.?\b/gi, 'university')  // Univ. or Univ -> university
+        .replace(/[()]/g, '')  // Remove parentheses
+        .replace(/\s+/g, ' ')  // Normalize whitespace
+        .trim();
+    };
+
+    const espnNorm = normalize(espnName);
+    const teamNames = Object.keys(teams);
+
+    // Try normalized exact match
+    for (const teamName of teamNames) {
+      if (normalize(teamName) === espnNorm) {
+        return teamName;
+      }
+    }
+
     // Try matching without common suffixes
     const cleanName = espnName.replace(/ (Buckeyes|Wolverines|Crimson Tide|Tigers|Bulldogs|Sooners|Longhorns|Wildcats|Bears|Cardinals|Bruins|Trojans|Ducks|Beavers|Cougars|Huskies|Sun Devils|Golden Bears|Utes|Buffaloes|Aztecs|Spartans|Nittany Lions|Hawkeyes|Cornhuskers|Badgers|Gophers|Fighting Irish|Hoosiers|Boilermakers|Illini|Mountaineers|Panthers|Seminoles|Hurricanes|Cavaliers|Hokies|Yellow Jackets|Demon Deacons|Blue Devils|Tar Heels|Wolfpack|Orange|Red Raiders|Horned Frogs|Cyclones|Jayhawks|Aggies|Razorbacks|Rebels|Commodores|Volunteers|Gamecocks|Gators|Dawgs)$/i, '').trim();
     if (teams[cleanName]) return cleanName;
@@ -825,24 +846,46 @@ const SportsBettingModelPro = () => {
       'north carolina-', 'florida-', 'colorado-', 'arizona-', 'utah-'
     ];
 
-    // Try partial match (team name contains or is contained)
-    const teamNames = Object.keys(teams);
+    // Word-based matching - more precise than simple includes()
     for (const teamName of teamNames) {
-      // ESPN name contains our team name
-      if (espnName.toLowerCase().includes(teamName.toLowerCase())) return teamName;
-      // Our team name contains ESPN name
-      if (teamName.toLowerCase().includes(espnName.toLowerCase())) return teamName;
+      // Skip very short names to avoid false positives
+      if (espnName.length < 4 && teamName.length < 4) continue;
 
-      // Match on city/location only (first word(s)) - BUT skip multi-campus systems
-      const espnCity = espnName.split(' ').slice(0, -1).join(' ');
-      const teamCity = teamName.split(' ').slice(0, -1).join(' ');
+      const espnWords = espnNorm.split(' ').filter(w => w.length > 2);
+      const teamWords = normalize(teamName).split(' ').filter(w => w.length > 2);
+
+      // Determine which is shorter and which is longer
+      const [shorterWords, longerWords] = espnWords.length <= teamWords.length
+        ? [espnWords, teamWords]
+        : [teamWords, espnWords];
+
+      // Skip if no significant words
+      if (shorterWords.length === 0) continue;
+
+      // All words from the shorter name must appear in the longer name
+      const allWordsMatch = shorterWords.every(word => longerWords.includes(word));
+
+      // Additional validation: for single-word matches, require longer word (>4 chars)
+      // to avoid matches like "RIT" matching random teams
+      if (shorterWords.length === 1 && shorterWords[0].length <= 4) continue;
+
+      if (allWordsMatch) return teamName;
+    }
+
+    // City/location matching - use ONLY first word, and require longer names
+    for (const teamName of teamNames) {
+      const espnCity = espnName.split(' ')[0].toLowerCase();
+      const teamCity = teamName.split(' ')[0].toLowerCase();
 
       // Check if this is a multi-campus university system (skip city matching if so)
       const isMultiCampus = multiCampusPrefixes.some(prefix =>
-        espnCity.toLowerCase().startsWith(prefix) || teamCity.toLowerCase().startsWith(prefix)
+        espnCity.startsWith(prefix.toLowerCase()) || teamCity.startsWith(prefix.toLowerCase())
       );
 
-      if (!isMultiCampus && espnCity && teamCity && espnCity.toLowerCase() === teamCity.toLowerCase()) {
+      // Only match on city if both are substantial (>4 chars) and not multi-campus
+      if (!isMultiCampus && espnCity && teamCity &&
+          espnCity.length > 4 && teamCity.length > 4 &&
+          espnCity === teamCity) {
         return teamName;
       }
     }
