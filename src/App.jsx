@@ -1495,6 +1495,23 @@ const SportsBettingModelPro = () => {
     setSelectedGames({});
   };
 
+  const toggleSelectAll = () => {
+    const importableGames = espnGames.filter(g => g.canImport);
+    const allSelected = importableGames.every(g => selectedGames[g.id]);
+
+    if (allSelected) {
+      // Deselect all
+      setSelectedGames({});
+    } else {
+      // Select all importable games
+      const newSelection = {};
+      importableGames.forEach(g => {
+        newSelection[g.id] = true;
+      });
+      setSelectedGames(newSelection);
+    }
+  };
+
   // Import full season - fetches all games from season start to today
   const [seasonImportProgress, setSeasonImportProgress] = useState('');
   
@@ -3181,12 +3198,20 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                   🚀 Import Full Season
                 </button>
                 {espnGames.length > 0 && (
-                  <button 
-                    onClick={importSelectedGames}
-                    className="px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600"
-                  >
-                    Import Selected ({Object.values(selectedGames).filter(Boolean).length})
-                  </button>
+                  <>
+                    <button
+                      onClick={toggleSelectAll}
+                      className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600"
+                    >
+                      {espnGames.filter(g => g.canImport).every(g => selectedGames[g.id]) ? 'Deselect All' : 'Select All'}
+                    </button>
+                    <button
+                      onClick={importSelectedGames}
+                      className="px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600"
+                    >
+                      Import Selected ({Object.values(selectedGames).filter(Boolean).length})
+                    </button>
+                  </>
                 )}
               </div>
               
