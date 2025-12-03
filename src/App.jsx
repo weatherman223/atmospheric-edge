@@ -1,4 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import {
+  safeParseFloat,
+  eloToWinProb,
+  americanToImpliedProb,
+  probToAmerican,
+  americanToDecimal,
+  calculateEV,
+  kellyStake,
+  kellyStakeCapped,
+  spreadCoverProb,
+  totalProb,
+  getConfidenceTier
+} from './utils/calculations';
 
 const SportsBettingModelPro = () => {
   const [activeTab, setActiveTab] = useState('analyze');
@@ -316,31 +329,7 @@ const SportsBettingModelPro = () => {
   };
 
   // === CORE FUNCTIONS ===
-  const eloToWinProb = (r1, r2, ha = 0) => 1 / (1 + Math.pow(10, -(r1 - r2 + ha) / 400));
-  
-  // Safe parsing with special value handling (EVEN, pk, PK)
-  const safeParseFloat = (val, fallback = 0) => {
-    if (typeof val === 'string') {
-      const upper = val.toUpperCase().trim();
-      if (upper === 'EVEN' || upper === 'EV') return 100; // EVEN odds = +100
-      if (upper === 'PK' || upper === 'PICK') return 0; // Pick'em spread = 0
-    }
-    const parsed = parseFloat(val);
-    return isNaN(parsed) ? fallback : parsed;
-  };
-  
-  const americanToImpliedProb = (o) => { const x = safeParseFloat(o); return x > 0 ? 100/(x+100) : Math.abs(x)/(Math.abs(x)+100); };
-  const probToAmerican = (p) => p >= 0.5 ? Math.round(-100*p/(1-p)) : '+' + Math.round(100*(1-p)/p);
-  const americanToDecimal = (o) => { const x = safeParseFloat(o); return x > 0 ? x/100+1 : 100/Math.abs(x)+1; };
-  const calculateEV = (p, o) => (p * (americanToDecimal(o)-1)) - (1-p);
-  const kellyStake = (p, o, b, f) => { const d = americanToDecimal(o); const k = ((d-1)*p - (1-p))/(d-1); return Math.max(0, k*f*b); };
-  
-  // Kelly with max bet cap - returns { amount, wasCapped, rawAmount }
-  const kellyStakeCapped = (p, o, b, f, maxBet) => {
-    const raw = kellyStake(p, o, b, f);
-    const capped = Math.min(raw, maxBet);
-    return { amount: capped, wasCapped: raw > maxBet && capped > 0, rawAmount: raw };
-  };
+  // Calculation utilities imported from ./utils/calculations.js
   
   const getAdjustedElo = (baseElo, injury, rest, motivation) => baseElo + injury + rest + motivation;
   
@@ -356,36 +345,13 @@ const SportsBettingModelPro = () => {
   };
 
   const predictSpread = (t1Elo, t2Elo, ha) => -((t1Elo + ha - t2Elo) * sportConfig[sport].spreadMultiplier);
-  const predictTotal = (t1, t2) => { 
-    const c = sportConfig[sport]; 
+  const predictTotal = (t1, t2) => {
+    const c = sportConfig[sport];
     const ri = c.ratingImpact || 1.0;
     // High offense = score more, High opponent defense = score less
     const t1Scores = c.avgScore * (1 + ((t1.off - 100) - (t2.def - 100)) * ri / 100);
     const t2Scores = c.avgScore * (1 + ((t2.off - 100) - (t1.def - 100)) * ri / 100);
     return t1Scores + t2Scores;
-  };
-  
-  const spreadCoverProb = (pred, book) => {
-    const c = sportConfig[sport]; const diff = safeParseFloat(book) - pred; const z = diff / (c.scoringVar * Math.sqrt(2));
-    const erf = (x) => { const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
-      const sign = x<0?-1:1; x=Math.abs(x); const t=1/(1+p*x); return sign*(1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x)); };
-    return 0.5 * (1 + erf(z));
-  };
-  
-  const totalProb = (pred, book, isOver) => {
-    const c = sportConfig[sport]; const diff = pred - safeParseFloat(book); const z = diff / (c.scoringVar * Math.sqrt(2) * 1.2);
-    const erf = (x) => { const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
-      const sign = x<0?-1:1; x=Math.abs(x); const t=1/(1+p*x); return sign*(1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x)); };
-    const over = 0.5 * (1 + erf(z)); return isOver ? over : 1 - over;
-  };
-
-  // Confidence Tier based on edge
-  const getConfidenceTier = (ev) => {
-    if (ev >= 10) return { stars: '★★★★★', label: 'ELITE', color: 'text-yellow-500', bg: 'bg-yellow-50 border-yellow-400' };
-    if (ev >= 6) return { stars: '★★★★☆', label: 'STRONG', color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-400' };
-    if (ev >= 3) return { stars: '★★★☆☆', label: 'GOOD', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-400' };
-    if (ev >= 1) return { stars: '★★☆☆☆', label: 'LEAN', color: 'text-gray-600', bg: 'bg-gray-50 border-gray-300' };
-    return { stars: '★☆☆☆☆', label: 'MARGINAL', color: 'text-gray-400', bg: 'bg-gray-50 border-gray-200' };
   };
 
   const updateRatings = () => {
@@ -1646,9 +1612,9 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
     }
     
     let spreadA = null;
-    if (bookSpread) { 
+    if (bookSpread) {
       // Home team (team1) spread analysis
-      const cp1 = spreadCoverProb(spread, bookSpread); 
+      const cp1 = spreadCoverProb(spread, bookSpread, sportConfig[sport]); 
       const ev1 = calculateEV(cp1, bookSpreadOdds) * 100;
       // Away team (team2) gets opposite spread
       const awaySpread = -safeParseFloat(bookSpread);
@@ -1681,8 +1647,8 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
     }
     
     let totalA = null;
-    if (bookTotal) { 
-      const op = totalProb(total,bookTotal,true); 
+    if (bookTotal) {
+      const op = totalProb(total, bookTotal, true, sportConfig[sport]); 
       const up = 1-op;
       const overEV = calculateEV(op,bookOverOdds)*100; 
       const underEV = calculateEV(up,bookUnderOdds)*100;
