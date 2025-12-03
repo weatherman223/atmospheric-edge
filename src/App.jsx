@@ -105,7 +105,8 @@ const SportsBettingModelPro = () => {
   };
 
   // NCAA API configuration for D3 sports
-  const ncaaApiBase = 'https://ncaa-api.henrygd.me';
+  // Use Vite proxy in development to bypass CORS, direct URL in production
+  const ncaaApiBase = import.meta.env.DEV ? '/ncaa-api' : 'https://ncaa-api.henrygd.me';
   const ncaaApiConfig = {
     d3mb: { sport: 'basketball-men', division: 'd3' },
     d3wb: { sport: 'basketball-women', division: 'd3' },
