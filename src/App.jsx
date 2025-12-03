@@ -783,11 +783,20 @@ const SportsBettingModelPro = () => {
   const matchTeamName = (espnName) => {
     // Try exact match first
     if (teams[espnName]) return espnName;
-    
+
     // Try matching without common suffixes
     const cleanName = espnName.replace(/ (Buckeyes|Wolverines|Crimson Tide|Tigers|Bulldogs|Sooners|Longhorns|Wildcats|Bears|Cardinals|Bruins|Trojans|Ducks|Beavers|Cougars|Huskies|Sun Devils|Golden Bears|Utes|Buffaloes|Aztecs|Spartans|Nittany Lions|Hawkeyes|Cornhuskers|Badgers|Gophers|Fighting Irish|Hoosiers|Boilermakers|Illini|Mountaineers|Panthers|Seminoles|Hurricanes|Cavaliers|Hokies|Yellow Jackets|Demon Deacons|Blue Devils|Tar Heels|Wolfpack|Orange|Red Raiders|Horned Frogs|Cyclones|Jayhawks|Aggies|Razorbacks|Rebels|Commodores|Volunteers|Gamecocks|Gators|Dawgs)$/i, '').trim();
     if (teams[cleanName]) return cleanName;
-    
+
+    // Multi-campus university system prefixes that should NOT use city matching
+    // These are shared across multiple distinct schools
+    const multiCampusPrefixes = [
+      'suny', 'penn st', 'penn state', 'uc ', 'cal state', 'california state',
+      'texas state', 'uw-', 'minnesota-', 'minn-', 'illinois-', 'indiana-',
+      'purdue-', 'wisconsin-', 'michigan-', 'ohio state-', 'virginia-',
+      'north carolina-', 'florida-', 'colorado-', 'arizona-', 'utah-'
+    ];
+
     // Try partial match (team name contains or is contained)
     const teamNames = Object.keys(teams);
     for (const teamName of teamNames) {
@@ -795,12 +804,21 @@ const SportsBettingModelPro = () => {
       if (espnName.toLowerCase().includes(teamName.toLowerCase())) return teamName;
       // Our team name contains ESPN name
       if (teamName.toLowerCase().includes(espnName.toLowerCase())) return teamName;
-      // Match on city/location only (first word(s))
+
+      // Match on city/location only (first word(s)) - BUT skip multi-campus systems
       const espnCity = espnName.split(' ').slice(0, -1).join(' ');
       const teamCity = teamName.split(' ').slice(0, -1).join(' ');
-      if (espnCity && teamCity && espnCity.toLowerCase() === teamCity.toLowerCase()) return teamName;
+
+      // Check if this is a multi-campus university system (skip city matching if so)
+      const isMultiCampus = multiCampusPrefixes.some(prefix =>
+        espnCity.toLowerCase().startsWith(prefix) || teamCity.toLowerCase().startsWith(prefix)
+      );
+
+      if (!isMultiCampus && espnCity && teamCity && espnCity.toLowerCase() === teamCity.toLowerCase()) {
+        return teamName;
+      }
     }
-    
+
     return null; // No match found
   };
 
