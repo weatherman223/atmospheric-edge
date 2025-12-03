@@ -1512,6 +1512,22 @@ const SportsBettingModelPro = () => {
     }
   };
 
+  const selectAllIncludingDuplicates = () => {
+    const allGamesSelected = espnGames.every(g => selectedGames[g.id]);
+
+    if (allGamesSelected) {
+      // Deselect all
+      setSelectedGames({});
+    } else {
+      // Select ALL games including duplicates
+      const newSelection = {};
+      espnGames.forEach(g => {
+        newSelection[g.id] = true;
+      });
+      setSelectedGames(newSelection);
+    }
+  };
+
   // Import full season - fetches all games from season start to today
   const [seasonImportProgress, setSeasonImportProgress] = useState('');
   
@@ -3205,6 +3221,14 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                     >
                       {espnGames.filter(g => g.canImport).every(g => selectedGames[g.id]) ? 'Deselect All' : 'Select All'}
                     </button>
+                    {espnGames.some(g => g.isDuplicate) && (
+                      <button
+                        onClick={selectAllIncludingDuplicates}
+                        className="px-4 py-2 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600"
+                      >
+                        {espnGames.every(g => selectedGames[g.id]) ? 'Deselect All' : 'Select All (incl. duplicates)'}
+                      </button>
+                    )}
                     <button
                       onClick={importSelectedGames}
                       className="px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600"
