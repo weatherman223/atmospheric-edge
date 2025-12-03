@@ -325,14 +325,42 @@ const SportsBettingModelPro = () => {
   };
 
   const resetAllData = () => {
-    if (confirm('Reset all data including bets, ratings, and game log?')) {
-      localStorage.removeItem('sportsBettingModel');
+    const sportName = sportConfig[sport]?.name || sport.toUpperCase();
+    if (confirm(`Reset all ${sportName} data including bets, ratings, and game log?\n\nThis will only affect ${sportName} - other sports will be preserved.`)) {
+      // Load existing data
+      const saved = localStorage.getItem('sportsBettingModel');
+      let existingData = {};
+      if (saved) {
+        try {
+          existingData = JSON.parse(saved);
+        } catch {
+          // Failed to parse saved data, use empty object
+        }
+      }
+
+      // Only reset teams for current sport, preserve other sports
+      const teamsBySport = { ...existingData.teamsBySport };
+      teamsBySport[sport] = getInitialTeams(sport);
+
+      // Filter out bets and game log entries for current sport
+      const filteredBets = (existingData.bets || []).filter(bet => bet.sport !== sport);
+      const filteredGameLog = (existingData.gameLog || []).filter(game => game.sport !== sport);
+
+      // Save updated data
+      const updatedData = {
+        ...existingData,
+        teamsBySport,
+        bets: filteredBets,
+        gameLog: filteredGameLog,
+        sport
+      };
+      localStorage.setItem('sportsBettingModel', JSON.stringify(updatedData));
+
+      // Update current state
       setTeams(getInitialTeams(sport));
-      teamsSportRef.current = sport; // Mark teams as belonging to this sport
-      setBets([]);
-      setGameLog([]);
-      setBankroll('1000');
-      setKellyFraction('0.25');
+      teamsSportRef.current = sport;
+      setBets(filteredBets);
+      setGameLog(filteredGameLog);
       setTeam1('');
       setTeam2('');
       resetContextAdjustments();
@@ -3007,7 +3035,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                   <button onClick={resetToBaseline} className="text-xs text-orange-500 hover:text-orange-700">
                     {(sport === 'cbb' || sport === 'cfb') ? 'Clear & Reimport' : 'Reset to 1500'}
                   </button>
-                  <button onClick={resetAllData} className="text-xs text-red-500 hover:text-red-700">Reset All Data</button>
+                  <button onClick={resetAllData} className="text-xs text-red-500 hover:text-red-700">Reset {config.name}</button>
                 </div>
               </div>
               <p className="text-xs text-gray-400 mb-3">Click a team to expand and adjust Off/Def ratings</p>
