@@ -93,22 +93,12 @@ const SportsBettingModelPro = () => {
   // Sport-specific settings
   // NHL note: OT/SO games handled specially - loser loses only 25% Elo (they get standings point), winner gains 75%
   // College sports: marginCap limits blowout impact (beating cupcakes by 40 shouldn't boost Elo too much)
-  // D3 sports: Use NCAA API instead of ESPN, lower home advantage due to smaller gyms
   const sportConfig = {
     nfl: { name: 'NFL 2025', homeAdvantage: 48, kFactor: 20, avgScore: 23, avgTotal: 46, spreadMultiplier: 0.04, scoringVar: 14, ratingImpact: 1.0, marginMult: 1 },
     nba: { name: 'NBA 2025-26', homeAdvantage: 30, kFactor: 20, avgScore: 118, avgTotal: 236, spreadMultiplier: 0.03, scoringVar: 12, ratingImpact: 0.6, marginMult: 1 },
     nhl: { name: 'NHL 2025-26', homeAdvantage: 22, kFactor: 22, avgScore: 3.1, avgTotal: 6.2, spreadMultiplier: 0.015, scoringVar: 1.5, ratingImpact: 0.8, marginMult: 4.5 },
     cfb: { name: 'CFB 2025', homeAdvantage: 55, kFactor: 18, avgScore: 28, avgTotal: 56, spreadMultiplier: 0.035, scoringVar: 16, ratingImpact: 1.0, marginMult: 1, marginCap: 21 },
     cbb: { name: 'CBB 2025-26', homeAdvantage: 35, kFactor: 20, avgScore: 72, avgTotal: 144, spreadMultiplier: 0.035, scoringVar: 10, ratingImpact: 0.6, marginMult: 1, marginCap: 15 },
-    d3mb: { name: 'D3 Men\'s BBall', homeAdvantage: 28, kFactor: 22, avgScore: 70, avgTotal: 140, spreadMultiplier: 0.035, scoringVar: 11, ratingImpact: 0.6, marginMult: 1, marginCap: 18, useNcaaApi: true },
-    d3wb: { name: 'D3 Women\'s BBall', homeAdvantage: 28, kFactor: 22, avgScore: 62, avgTotal: 124, spreadMultiplier: 0.035, scoringVar: 10, ratingImpact: 0.6, marginMult: 1, marginCap: 18, useNcaaApi: true },
-  };
-
-  // NCAA API configuration for D3 sports
-  const ncaaApiBase = 'https://ncaa-api.henrygd.me';
-  const ncaaApiConfig = {
-    d3mb: { sport: 'basketball-men', division: 'd3' },
-    d3wb: { sport: 'basketball-women', division: 'd3' },
   };
 
   // Initial team data
@@ -621,8 +611,6 @@ const SportsBettingModelPro = () => {
     nhl: '20251007',   // NHL 2025-26 season start
     cfb: '20250823',   // CFB 2025 season start
     cbb: '20251103',   // CBB 2025-26 season start
-    d3mb: '20251108',  // D3 Men's Basketball 2025-26 season start
-    d3wb: '20251108',  // D3 Women's Basketball 2025-26 season start
   };
 
   // Conference tier mappings for starting Elo (conferenceId -> tier)
@@ -696,74 +684,11 @@ const SportsBettingModelPro = () => {
       '48': 1300,  // CAA Football
       '177': 1300, // United Athletic Conference
       '179': 1300, // OVC-Big South Football Association
-    },
-    // D3 Basketball Conference Tiers
-    // Based on historical tournament success and competitiveness
-    // Top conferences get 1500, mid-tier 1420, others 1350
-    d3mb: {
-      // Elite D3 conferences - regularly produce tournament teams
-      'UAA': 1500,        // University Athletic Association (Chicago, NYU, Emory, etc.)
-      'NESCAC': 1500,     // New England Small College Athletic Conference
-      'ODAC': 1480,       // Old Dominion Athletic Conference
-      'CCIW': 1480,       // College Conference of Illinois and Wisconsin
-      'SCIAC': 1470,      // Southern California Intercollegiate Athletic
-      'NEWMAC': 1470,     // New England Women's and Men's Athletic Conference
-      'Centennial': 1460, // Centennial Conference
-      'Liberty': 1460,    // Liberty League
-      'SAA': 1450,        // Southern Athletic Association
-      'WIAC': 1450,       // Wisconsin Intercollegiate Athletic Conference
-      // Mid-tier conferences
-      'MIAA': 1420,       // Michigan Intercollegiate Athletic Association
-      'NACC': 1420,       // Northern Athletics Collegiate Conference
-      'OAC': 1420,        // Ohio Athletic Conference
-      'PAC': 1420,        // Presidents\' Athletic Conference
-      'SLIAC': 1420,      // St. Louis Intercollegiate Athletic
-      'USA South': 1420,  // USA South Athletic Conference
-      'CCC': 1400,        // Commonwealth Coast Conference
-      'ASC': 1400,        // American Southwest Conference
-      'SCAC': 1400,       // Southern Collegiate Athletic Conference
-      'NC3': 1400,        // North Coast Athletic Conference
-    },
-    d3wb: {
-      // Same structure for women's basketball (similar competitive landscape)
-      'UAA': 1500,
-      'NESCAC': 1500,
-      'ODAC': 1480,
-      'CCIW': 1480,
-      'SCIAC': 1470,
-      'NEWMAC': 1470,
-      'Centennial': 1460,
-      'Liberty': 1460,
-      'SAA': 1450,
-      'WIAC': 1450,
-      'MIAA': 1420,
-      'NACC': 1420,
-      'OAC': 1420,
-      'PAC': 1420,
-      'SLIAC': 1420,
-      'USA South': 1420,
-      'CCC': 1400,
-      'ASC': 1400,
-      'SCAC': 1400,
-      'NC3': 1400,
     }
   };
 
-  // Get starting Elo based on conference ID or name
+  // Get starting Elo based on conference ID
   const getConferenceElo = (conferenceId, sportKey) => {
-    // D3 sports use conference NAME (string), not ID
-    if (sportKey === 'd3mb' || sportKey === 'd3wb') {
-      if (!conferenceId) return 1350; // Default D3 Elo
-      const elo = conferenceTiers[sportKey]?.[conferenceId];
-      if (elo) {
-        console.log(`D3 Conference ${conferenceId} -> Elo ${elo}`);
-        return elo;
-      }
-      console.log(`D3 Conference ${conferenceId} not in tier list, using 1350`);
-      return 1350; // Default for unknown D3 conferences
-    }
-
-    // ESPN sports use conference ID (number)
     if (!conferenceId || !conferenceTiers[sportKey]) {
       console.log(`No conference tier found for ${conferenceId} in ${sportKey}, using 1200 (D2/D3/NAIA)`);
       return 1200; // Very low - likely D2/D3/NAIA exhibition opponent
@@ -820,397 +745,12 @@ const SportsBettingModelPro = () => {
     });
   };
 
-  // Fetch scores from NCAA API for D3 sports
-  const fetchNCAAScores = async () => {
-    setImportLoading(true);
-    setImportError('');
-    setEspnGames([]);
-    setSelectedGames({});
-
-    try {
-      const ncaaConfig = ncaaApiConfig[sport];
-      if (!ncaaConfig) {
-        throw new Error('Sport not configured for NCAA API');
-      }
-
-      const dateStr = importDate.replace(/-/g, '');
-      const year = dateStr.substring(0, 4);
-      const month = dateStr.substring(4, 6);
-      const day = dateStr.substring(6, 8);
-
-      // NCAA API uses date format: /scoreboard/basketball-men/d3/2024/01/15/all-conf
-      const url = `${ncaaApiBase}/scoreboard/${ncaaConfig.sport}/${ncaaConfig.division}/${year}/${month}/${day}/all-conf`;
-
-      console.log('Fetching NCAA:', url);
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`NCAA API returned ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (!data.games || data.games.length === 0) {
-        setImportError('No games found for this date');
-        setImportLoading(false);
-        return;
-      }
-
-      // First pass: collect all team names and find missing ones
-      const teamsToAdd = {};
-
-      data.games
-        .filter(gameWrapper => gameWrapper.game?.gameState === 'final')
-        .forEach(gameWrapper => {
-          const game = gameWrapper.game;
-          const homeName = game.home?.names?.full || game.home?.names?.short || 'Unknown';
-          const awayName = game.away?.names?.full || game.away?.names?.short || 'Unknown';
-          // Get conference from first conference listed (primary conference)
-          const homeConf = game.home?.conferences?.[0]?.conferenceName || null;
-          const awayConf = game.away?.conferences?.[0]?.conferenceName || null;
-
-          if (!matchTeamName(homeName) && homeName !== 'Unknown') {
-            const startingElo = getConferenceElo(homeConf, sport);
-            console.log(`Adding ${homeName} with conf=${homeConf}, startingElo=${startingElo}`);
-            teamsToAdd[homeName] = { elo: startingElo, off: 100, def: 100, conference: homeConf };
-          }
-          if (!matchTeamName(awayName) && awayName !== 'Unknown') {
-            const startingElo = getConferenceElo(awayConf, sport);
-            console.log(`Adding ${awayName} with conf=${awayConf}, startingElo=${startingElo}`);
-            teamsToAdd[awayName] = { elo: startingElo, off: 100, def: 100, conference: awayConf };
-          }
-        });
-
-      // Add missing teams if any
-      const addedTeamNames = Object.keys(teamsToAdd);
-      if (addedTeamNames.length > 0) {
-        setTeams(prev => ({ ...prev, ...teamsToAdd }));
-      }
-
-      // Now map games
-      const games = data.games
-        .filter(gameWrapper => gameWrapper.game?.gameState === 'final')
-        .map(gameWrapper => {
-          const game = gameWrapper.game;
-          const homeName = game.home?.names?.full || game.home?.names?.short || 'Unknown';
-          const awayName = game.away?.names?.full || game.away?.names?.short || 'Unknown';
-          const homeScore = parseInt(game.home?.score) || 0;
-          const awayScore = parseInt(game.away?.score) || 0;
-
-          const matchedHome = matchTeamName(homeName) || (teamsToAdd[homeName] ? homeName : null);
-          const matchedAway = matchTeamName(awayName) || (teamsToAdd[awayName] ? awayName : null);
-
-          const isDuplicate = matchedHome && matchedAway && isDuplicateGame(matchedHome, matchedAway, homeScore, awayScore);
-
-          return {
-            id: game.gameID || `${homeName}-${awayName}-${dateStr}`,
-            espnHome: homeName,
-            espnAway: awayName,
-            homeScore,
-            awayScore,
-            matchedHome,
-            matchedAway,
-            canImport: matchedHome && matchedAway,
-            isDuplicate,
-            isOT: game.currentPeriod?.includes('OT') || false,
-            newTeams: [
-              teamsToAdd[homeName] ? homeName : null,
-              teamsToAdd[awayName] ? awayName : null
-            ].filter(Boolean)
-          };
-        });
-
-      if (games.length === 0) {
-        setImportError('No completed games found for this date');
-      } else {
-        setEspnGames(games);
-        // Auto-select games that can be imported AND are not duplicates
-        const autoSelected = {};
-        games.forEach(g => {
-          if (g.canImport && !g.isDuplicate) autoSelected[g.id] = true;
-        });
-        setSelectedGames(autoSelected);
-
-        // Notify user about added teams and duplicates
-        const duplicateCount = games.filter(g => g.isDuplicate).length;
-        if (addedTeamNames.length > 0 || duplicateCount > 0) {
-          let message = '';
-          if (addedTeamNames.length > 0) {
-            message = `Auto-added ${addedTeamNames.length} new team(s) with conference-based starting Elo: ${addedTeamNames.slice(0, 5).join(', ')}${addedTeamNames.length > 5 ? ` and ${addedTeamNames.length - 5} more` : ''}`;
-          }
-          if (duplicateCount > 0) {
-            message += message ? ` • ${duplicateCount} duplicate(s) detected` : `${duplicateCount} duplicate game(s) already in log`;
-          }
-          setImportError(message);
-        }
-      }
-    } catch (err) {
-      setImportError(`Error: ${err.message}`);
-    }
-
-    setImportLoading(false);
-  };
-
-  // Import full season from NCAA API for D3 sports (date-by-date with rate limiting)
-  const importNCAAFullSeason = async () => {
-    const config = sportConfig[sport];
-    if (!confirm(`This will import ALL ${config.name} games from the start of the season to today. This may take several minutes due to API rate limits (5 req/sec). Continue?`)) return;
-
-    setImportLoading(true);
-    setSeasonImportProgress('Starting NCAA season import...');
-    setImportError('');
-
-    const ncaaConfig = ncaaApiConfig[sport];
-    if (!ncaaConfig) {
-      setImportError('Sport not configured for NCAA API');
-      setImportLoading(false);
-      return;
-    }
-
-    try {
-      const startDateStr = seasonStartDates[sport];
-      const startDate = new Date(startDateStr.substring(0, 4), parseInt(startDateStr.substring(4, 6)) - 1, parseInt(startDateStr.substring(6, 8)));
-      const today = new Date();
-
-      // Generate list of dates to fetch
-      const datesToFetch = [];
-      let currentDate = new Date(startDate);
-      while (currentDate <= today) {
-        datesToFetch.push(new Date(currentDate));
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-
-      let currentTeams = { ...teams };
-      const newGameLog = [];
-      let addedTeamsCount = 0;
-      let importedCount = 0;
-      let fetchedDates = 0;
-
-      // Process dates in batches to respect rate limit
-      for (const date of datesToFetch) {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-
-        setSeasonImportProgress(`Fetching ${month}/${day}/${year} (${fetchedDates + 1}/${datesToFetch.length})...`);
-
-        try {
-          const url = `${ncaaApiBase}/scoreboard/${ncaaConfig.sport}/${ncaaConfig.division}/${year}/${month}/${day}/all-conf`;
-          const response = await fetch(url);
-
-          if (response.ok) {
-            const data = await response.json();
-
-            if (data.games && data.games.length > 0) {
-              const completedGames = data.games
-                .filter(gw => gw.game?.gameState === 'final')
-                .map(gw => {
-                  const game = gw.game;
-                  return {
-                    id: game.gameID,
-                    date: `${year}-${month}-${day}`,
-                    espnHome: game.home?.names?.full || game.home?.names?.short || 'Unknown',
-                    espnAway: game.away?.names?.full || game.away?.names?.short || 'Unknown',
-                    homeScore: parseInt(game.home?.score) || 0,
-                    awayScore: parseInt(game.away?.score) || 0,
-                    homeConf: game.home?.conferences?.[0]?.conferenceName || null,
-                    awayConf: game.away?.conferences?.[0]?.conferenceName || null,
-                    isOT: game.currentPeriod?.includes('OT') || false,
-                  };
-                });
-
-              // Process each game using regressRating from utils
-              const { regressRating } = await import('./utils/calculations');
-              for (const game of completedGames) {
-                // Add missing teams
-                if (!currentTeams[game.espnHome] && game.espnHome !== 'Unknown') {
-                  const startingElo = getConferenceElo(game.homeConf, sport);
-                  currentTeams[game.espnHome] = { elo: startingElo, off: 100, def: 100, conference: game.homeConf };
-                  addedTeamsCount++;
-                }
-                if (!currentTeams[game.espnAway] && game.espnAway !== 'Unknown') {
-                  const startingElo = getConferenceElo(game.awayConf, sport);
-                  currentTeams[game.espnAway] = { elo: startingElo, off: 100, def: 100, conference: game.awayConf };
-                  addedTeamsCount++;
-                }
-
-                const homeName = game.espnHome;
-                const awayName = game.espnAway;
-
-                if (!currentTeams[homeName] || !currentTeams[awayName]) continue;
-
-                // Check for duplicate
-                const isDupe = newGameLog.some(g =>
-                  (g.team1 === homeName && g.team2 === awayName) ||
-                  (g.team1 === awayName && g.team2 === homeName)
-                ) || isDuplicateGame(homeName, awayName, game.homeScore, game.awayScore);
-
-                if (isDupe) continue;
-
-                // Calculate ratings changes
-                const c = config;
-                const t1 = currentTeams[homeName];
-                const t2 = currentTeams[awayName];
-                const s1 = game.homeScore;
-                const s2 = game.awayScore;
-
-                const winner = s1 > s2 ? homeName : awayName;
-                const loser = s1 > s2 ? awayName : homeName;
-                const rawMov = Math.abs(s1 - s2);
-                const mov = c.marginCap ? Math.min(rawMov, c.marginCap) : rawMov;
-                const exp = eloToWinProb(currentTeams[winner].elo, currentTeams[loser].elo);
-                const eloChange = Math.round(c.kFactor * Math.min(Math.log(mov * (c.marginMult || 1) + 1) * 0.8 + 1, 2.5) * (1 - exp));
-
-                // Off/Def calculations
-                const ri = c.ratingImpact || 1.0;
-                const exp1 = c.avgScore * (1 + ((t1.off - 100) - (t2.def - 100)) * ri / 100);
-                const exp2 = c.avgScore * (1 + ((t2.off - 100) - (t1.def - 100)) * ri / 100);
-                const offScale = 0.3;
-                const t1OffDiff = Math.round((s1 - exp1) * offScale);
-                const t2OffDiff = Math.round((s2 - exp2) * offScale);
-                const t1DefDiff = Math.round((exp2 - s2) * offScale);
-                const t2DefDiff = Math.round((exp1 - s1) * offScale);
-
-                // Apply changes
-                currentTeams[homeName] = {
-                  ...currentTeams[homeName],
-                  elo: currentTeams[homeName].elo + (s1 > s2 ? eloChange : -eloChange),
-                  off: regressRating(Math.max(70, Math.min(130, currentTeams[homeName].off + t1OffDiff)), sport),
-                  def: regressRating(Math.max(70, Math.min(130, currentTeams[homeName].def + t1DefDiff)), sport),
-                };
-                currentTeams[awayName] = {
-                  ...currentTeams[awayName],
-                  elo: currentTeams[awayName].elo + (s2 > s1 ? eloChange : -eloChange),
-                  off: regressRating(Math.max(70, Math.min(130, currentTeams[awayName].off + t2OffDiff)), sport),
-                  def: regressRating(Math.max(70, Math.min(130, currentTeams[awayName].def + t2DefDiff)), sport),
-                };
-
-                newGameLog.push({
-                  date: game.date,
-                  team1: homeName,
-                  team2: awayName,
-                  score: `${s1}-${s2}${game.isOT ? ' OT' : ''}`,
-                  eloChange,
-                  isOT: game.isOT,
-                  t1Changes: { elo: s1 > s2 ? eloChange : -eloChange, off: t1OffDiff, def: t1DefDiff },
-                  t2Changes: { elo: s2 > s1 ? eloChange : -eloChange, off: t2OffDiff, def: t2DefDiff }
-                });
-
-                importedCount++;
-              }
-            }
-          }
-        } catch (err) {
-          console.log(`Error fetching ${month}/${day}/${year}:`, err.message);
-          // Continue with next date
-        }
-
-        fetchedDates++;
-
-        // Rate limiting: wait 200ms between requests to stay under 5/sec
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        // Progress update
-        if (fetchedDates % 10 === 0) {
-          setSeasonImportProgress(`Processed ${fetchedDates}/${datesToFetch.length} dates, ${importedCount} games imported...`);
-        }
-      }
-
-      // Apply all updates at once
-      setTeams(currentTeams);
-      setGameLog(prev => [...prev, ...newGameLog]);
-
-      setSeasonImportProgress('');
-      alert(`NCAA Season import complete!\n\nImported: ${importedCount} games\nNew teams added: ${addedTeamsCount}`);
-
-    } catch (err) {
-      setImportError(`Error: ${err.message}`);
-      setSeasonImportProgress('');
-    }
-
-    setImportLoading(false);
-  };
-
-  // Fetch Today's Games from NCAA API for D3 sports
-  const fetchNCAATodaysGames = async () => {
-    setTodaysGamesLoading(true);
-    setTodaysGames([]);
-
-    try {
-      const ncaaConfig = ncaaApiConfig[sport];
-      if (!ncaaConfig) {
-        setTodaysGamesLoading(false);
-        return;
-      }
-
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-
-      const url = `${ncaaApiBase}/scoreboard/${ncaaConfig.sport}/${ncaaConfig.division}/${year}/${month}/${day}/all-conf`;
-
-      const response = await fetch(url);
-      if (!response.ok) {
-        setTodaysGamesLoading(false);
-        return;
-      }
-
-      const data = await response.json();
-
-      if (!data.games || data.games.length === 0) {
-        setTodaysGamesLoading(false);
-        return;
-      }
-
-      // Get all games (not just completed)
-      const games = data.games
-        .filter(gw => gw.game?.gameState !== 'final') // Upcoming/in-progress
-        .map(gw => {
-          const game = gw.game;
-          const homeName = game.home?.names?.full || game.home?.names?.short || 'Unknown';
-          const awayName = game.away?.names?.full || game.away?.names?.short || 'Unknown';
-
-          const matchedHome = matchTeamName(homeName) || homeName;
-          const matchedAway = matchTeamName(awayName) || awayName;
-
-          return {
-            id: game.gameID || `${homeName}-${awayName}`,
-            homeTeam: matchedHome,
-            awayTeam: matchedAway,
-            espnHomeName: homeName,
-            espnAwayName: awayName,
-            time: game.startTime || 'TBD',
-            status: game.gameState === 'live' ? game.currentPeriod || 'Live' : 'Scheduled',
-            // NCAA API doesn't provide odds
-            homeML: null,
-            awayML: null,
-            spread: null,
-            total: null,
-            bookmaker: null,
-          };
-        });
-
-      setTodaysGames(games);
-
-    } catch (err) {
-      console.error('Failed to fetch NCAA today\'s games:', err);
-    }
-
-    setTodaysGamesLoading(false);
-  };
-
   const fetchESPNScores = async () => {
-    // Route D3 sports to NCAA API
-    if (sportConfig[sport]?.useNcaaApi) {
-      return fetchNCAAScores();
-    }
-
     setImportLoading(true);
     setImportError('');
     setEspnGames([]);
     setSelectedGames({});
-
+    
     try {
       const dateStr = importDate.replace(/-/g, '');
       // College sports need groups parameter to get all games, not just ranked teams
@@ -1452,11 +992,6 @@ const SportsBettingModelPro = () => {
   const [seasonImportProgress, setSeasonImportProgress] = useState('');
   
   const importFullSeason = async () => {
-    // Route D3 sports to NCAA API
-    if (sportConfig[sport]?.useNcaaApi) {
-      return importNCAAFullSeason();
-    }
-
     if (!confirm(`This will import ALL ${config.name} games from the start of the season to today. This may take a minute and will update all team ratings. Continue?`)) return;
     
     setImportLoading(true);
@@ -1715,14 +1250,9 @@ const SportsBettingModelPro = () => {
   };
   
   const fetchTodaysGames = async () => {
-    // Route D3 sports to NCAA API
-    if (sportConfig[sport]?.useNcaaApi) {
-      return fetchNCAATodaysGames();
-    }
-
     setTodaysGamesLoading(true);
     setTodaysGames([]);
-
+    
     try {
       const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
       let extraParams = '';
@@ -3101,14 +2631,9 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               ) : <p className="text-gray-400 text-sm">No games recorded</p>}
             </div>
             
-            {/* ESPN/NCAA Import */}
+            {/* ESPN Import */}
             <div className={`${cardStyle} lg:col-span-2`}>
-              <h2 className="text-lg font-bold mb-3">📡 Import from {sportConfig[sport]?.useNcaaApi ? 'NCAA' : 'ESPN'}</h2>
-              {sportConfig[sport]?.useNcaaApi && (
-                <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-xs">
-                  ⚡ D3 data via <a href="https://ncaa-api.henrygd.me" target="_blank" rel="noopener noreferrer" className="underline font-medium">ncaa-api.henrygd.me</a> • Rate limited to 5 req/sec • Full season import may take several minutes
-                </div>
-              )}
+              <h2 className="text-lg font-bold mb-3">📡 Import from ESPN</h2>
               <div className="flex flex-wrap gap-3 items-end mb-4">
                 <div>
                   <label className={labelStyle}>Date</label>
