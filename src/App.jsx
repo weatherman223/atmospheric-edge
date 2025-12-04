@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   safeParseFloat,
   eloToWinProb,
@@ -12,6 +12,7 @@ import {
   totalProb,
   getConfidenceTier
 } from './utils/calculations';
+import { runScoreSimulations } from './utils/simulations';
 
 const SportsBettingModelPro = () => {
   const [activeTab, setActiveTab] = useState('analyze');
@@ -38,6 +39,10 @@ const SportsBettingModelPro = () => {
   const [bookTotal, setBookTotal] = useState('');
   const [bookOverOdds, setBookOverOdds] = useState('-110');
   const [bookUnderOdds, setBookUnderOdds] = useState('-110');
+  const [useSimulation, setUseSimulation] = useState(false);
+  const [simulationRuns, setSimulationRuns] = useState(3500);
+  const [showSimPercentiles, setShowSimPercentiles] = useState(true);
+  const simulationCacheRef = useRef({});
   
   const [bankroll, setBankroll] = useState('1000');
   const [kellyFraction, setKellyFraction] = useState('0.25');
@@ -2172,42 +2177,99 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
     // Primary display uses Elo-based (aligns with spread)
     const sc1 = eloSc1;
     const sc2 = eloSc2;
-    
+
+    const bookSpreadVal = bookSpread ? safeParseFloat(bookSpread) : null;
+    const bookTotalVal = bookTotal ? safeParseFloat(bookTotal) : null;
+    const analyticalCoverProb = bookSpreadVal !== null ? spreadCoverProb(spread, bookSpreadVal, sportConfig[sport]) : null;
+    const analyticalOverProb = bookTotalVal !== null ? totalProb(total, bookTotalVal, true, sportConfig[sport]) : null;
+
+    let simulation = null;
+    const simKey = JSON.stringify({
+      sport,
+      team1,
+      team2,
+      spread,
+      total,
+      bookSpreadVal,
+      bookTotalVal,
+      simulationRuns,
+      t1AdjElo,
+      t2AdjElo,
+      team1Injury,
+      team2Injury,
+      team1Rest,
+      team2Rest,
+      team1Motivation,
+      team2Motivation,
+      isNeutral,
+      showSimPercentiles
+    });
+
+    if (useSimulation) {
+      simulation = simulationCacheRef.current[simKey];
+      if (!simulation) {
+        simulation = runScoreSimulations({
+          predictedSpread: spread,
+          predictedTotal: total,
+          scoringVar: c.scoringVar,
+          marginMult: c.marginMult || 1,
+          simulations: simulationRuns,
+          bookSpread: bookSpreadVal,
+          bookTotal: bookTotalVal,
+          includePercentiles: showSimPercentiles,
+          skew: c.ratingImpact < 0.7 ? 0.05 : 0.12
+        });
+        simulationCacheRef.current[simKey] = simulation;
+      }
+    }
+
+    const probSource = useSimulation && simulation ? 'simulation' : 'analytical';
+    const activeWinProbHome = probSource === 'simulation' ? simulation.team1WinRate : p1;
+    const activeWinProbAway = probSource === 'simulation' ? simulation.team2WinRate : p2;
+    const coverProbHome = probSource === 'simulation' && simulation?.spread ? simulation.spread.homeCover : analyticalCoverProb;
+    const coverProbAway = probSource === 'simulation' && simulation?.spread ? simulation.spread.awayCover : (analyticalCoverProb !== null ? 1 - analyticalCoverProb : null);
+    const coverPushProb = probSource === 'simulation' && simulation?.spread ? simulation.spread.push : 0;
+    const overProbActive = probSource === 'simulation' && simulation?.totals ? simulation.totals.over : analyticalOverProb;
+    const underProbActive = probSource === 'simulation' && simulation?.totals ? simulation.totals.under : (analyticalOverProb !== null ? 1 - analyticalOverProb : null);
+    const totalPushProb = probSource === 'simulation' && simulation?.totals ? simulation.totals.push : 0;
+
     let ml1 = null, ml2 = null;
-    if (bookML1) { 
-      const imp = americanToImpliedProb(bookML1); 
-      const ev = calculateEV(p1,bookML1)*100; 
-      const kellyData = kellyStakeCapped(p1, bookML1, liveBankroll, safeParseFloat(kellyFraction), maxBet);
-      ml1 = { edge: (p1-imp)*100, ev, kelly: kellyData.amount, kellyCapped: kellyData.wasCapped, kellyRaw: kellyData.rawAmount, isPositive: ev > 0, confidence: getConfidenceTier(ev) }; 
+    if (bookML1) {
+      const imp = americanToImpliedProb(bookML1);
+      const ev = calculateEV(activeWinProbHome,bookML1)*100;
+      const kellyData = kellyStakeCapped(activeWinProbHome, bookML1, liveBankroll, safeParseFloat(kellyFraction), maxBet);
+      ml1 = { edge: (activeWinProbHome-imp)*100, ev, kelly: kellyData.amount, kellyCapped: kellyData.wasCapped, kellyRaw: kellyData.rawAmount, isPositive: ev > 0, confidence: getConfidenceTier(ev), probSource };
     }
-    if (bookML2) { 
-      const imp = americanToImpliedProb(bookML2); 
-      const ev = calculateEV(p2,bookML2)*100; 
-      const kellyData = kellyStakeCapped(p2, bookML2, liveBankroll, safeParseFloat(kellyFraction), maxBet);
-      ml2 = { edge: (p2-imp)*100, ev, kelly: kellyData.amount, kellyCapped: kellyData.wasCapped, kellyRaw: kellyData.rawAmount, isPositive: ev > 0, confidence: getConfidenceTier(ev) }; 
+    if (bookML2) {
+      const imp = americanToImpliedProb(bookML2);
+      const ev = calculateEV(activeWinProbAway,bookML2)*100;
+      const kellyData = kellyStakeCapped(activeWinProbAway, bookML2, liveBankroll, safeParseFloat(kellyFraction), maxBet);
+      ml2 = { edge: (activeWinProbAway-imp)*100, ev, kelly: kellyData.amount, kellyCapped: kellyData.wasCapped, kellyRaw: kellyData.rawAmount, isPositive: ev > 0, confidence: getConfidenceTier(ev), probSource };
     }
-    
+
     let spreadA = null;
-    if (bookSpread) {
+    if (bookSpreadVal !== null && coverProbHome !== null) {
       // Home team (team1) spread analysis
-      const cp1 = spreadCoverProb(spread, bookSpread, sportConfig[sport]); 
-      const ev1 = calculateEV(cp1, bookSpreadOdds) * 100;
+      const ev1 = calculateEV(coverProbHome, bookSpreadOdds) * 100;
       // Away team (team2) gets opposite spread
-      const awaySpread = -safeParseFloat(bookSpread);
-      const cp2 = 1 - cp1; // Away cover prob is inverse (no push on half-points)
+      const awaySpread = -bookSpreadVal;
+      const cp2 = coverProbAway !== null ? coverProbAway : 1 - coverProbHome; // Away cover prob is inverse (no push on half-points)
       const ev2 = calculateEV(cp2, bookSpreadOdds2) * 100;
-      const homeKellyData = kellyStakeCapped(cp1, bookSpreadOdds, liveBankroll, safeParseFloat(kellyFraction), maxBet);
+      const homeKellyData = kellyStakeCapped(coverProbHome, bookSpreadOdds, liveBankroll, safeParseFloat(kellyFraction), maxBet);
       const awayKellyData = kellyStakeCapped(cp2, bookSpreadOdds2, liveBankroll, safeParseFloat(kellyFraction), maxBet);
-      spreadA = { 
-        predictedSpread: spread, 
+      spreadA = {
+        predictedSpread: spread,
+        source: probSource,
+        modelCoverProb: analyticalCoverProb !== null ? analyticalCoverProb * 100 : null,
+        simCoverProb: simulation?.spread?.homeCover !== undefined && simulation?.spread?.homeCover !== null ? simulation.spread.homeCover * 100 : null,
         // Home team (team1) - the spread as entered
-        homeCoverProb: cp1 * 100, 
-        homeEV: ev1, 
+        homeCoverProb: coverProbHome * 100,
+        homeEV: ev1,
         homeKelly: homeKellyData.amount,
         homeKellyCapped: homeKellyData.wasCapped,
         homeKellyRaw: homeKellyData.rawAmount,
-        homeSpread: safeParseFloat(bookSpread),
-        isHomePositive: ev1 > 0, 
+        homeSpread: bookSpreadVal,
+        isHomePositive: ev1 > 0,
         homeConfidence: getConfidenceTier(ev1),
         // Away team (team2) - opposite spread
         awayCoverProb: cp2 * 100,
@@ -2218,36 +2280,39 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
         awaySpread: awaySpread,
         isAwayPositive: ev2 > 0,
         awayConfidence: getConfidenceTier(ev2),
-        value: spread - safeParseFloat(bookSpread)
-      }; 
+        pushProb: coverPushProb * 100,
+        value: spread - bookSpreadVal
+      };
     }
-    
+
     let totalA = null;
-    if (bookTotal) {
-      const op = totalProb(total, bookTotal, true, sportConfig[sport]); 
-      const up = 1-op;
-      const overEV = calculateEV(op,bookOverOdds)*100; 
-      const underEV = calculateEV(up,bookUnderOdds)*100;
-      const overKellyData = kellyStakeCapped(op, bookOverOdds, liveBankroll, safeParseFloat(kellyFraction), maxBet);
-      const underKellyData = kellyStakeCapped(up, bookUnderOdds, liveBankroll, safeParseFloat(kellyFraction), maxBet);
-      totalA = { 
-        predictedTotal: total, 
-        overProb: op*100, 
-        underProb: up*100, 
-        overEV, 
-        underEV, 
-        overKelly: overKellyData.amount, 
+    if (bookTotalVal !== null && overProbActive !== null) {
+      const overEV = calculateEV(overProbActive,bookOverOdds)*100;
+      const underEV = calculateEV(underProbActive,bookUnderOdds)*100;
+      const overKellyData = kellyStakeCapped(overProbActive, bookOverOdds, liveBankroll, safeParseFloat(kellyFraction), maxBet);
+      const underKellyData = kellyStakeCapped(underProbActive, bookUnderOdds, liveBankroll, safeParseFloat(kellyFraction), maxBet);
+      totalA = {
+        predictedTotal: total,
+        source: probSource,
+        modelOverProb: analyticalOverProb !== null ? analyticalOverProb * 100 : null,
+        simOverProb: simulation?.totals?.over !== undefined && simulation?.totals?.over !== null ? simulation.totals.over * 100 : null,
+        overProb: overProbActive*100,
+        underProb: underProbActive*100,
+        overEV,
+        underEV,
+        overKelly: overKellyData.amount,
         overKellyCapped: overKellyData.wasCapped,
         overKellyRaw: overKellyData.rawAmount,
-        underKelly: underKellyData.amount, 
+        underKelly: underKellyData.amount,
         underKellyCapped: underKellyData.wasCapped,
         underKellyRaw: underKellyData.rawAmount,
-        value: total-safeParseFloat(bookTotal), 
-        isOverPositive: overEV>0, 
-        isUnderPositive: underEV>0, 
-        overConfidence: getConfidenceTier(overEV), 
-        underConfidence: getConfidenceTier(underEV) 
-      }; 
+        pushProb: totalPushProb * 100,
+        value: total-bookTotalVal,
+        isOverPositive: overEV>0,
+        isUnderPositive: underEV>0,
+        overConfidence: getConfidenceTier(overEV),
+        underConfidence: getConfidenceTier(underEV)
+      };
     }
     
     // === DIVERGENCE ANALYSIS: Compare Elo-based vs Off/Def-based predictions ===
@@ -2470,7 +2535,54 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
       });
     }
     
-    return { team1WinProb: p1*100, team2WinProb: p2*100, team1FairOdds: probToAmerican(p1), team2FairOdds: probToAmerican(p2), predSpread: spread, predTotal: total, team1PredScore: sc1, team2PredScore: sc2, team1OffDefScore: offDefSc1, team2OffDefScore: offDefSc2, ml1Analysis: ml1, ml2Analysis: ml2, spreadAnalysis: spreadA, totalsAnalysis: totalA, t1AdjElo, t2AdjElo, insights, liveBankroll, maxBet };
+    const probabilityBreakdown = {
+      analytical: {
+        winHome: p1 * 100,
+        winAway: p2 * 100,
+        coverHome: analyticalCoverProb !== null ? analyticalCoverProb * 100 : null,
+        coverAway: analyticalCoverProb !== null ? (1 - analyticalCoverProb) * 100 : null,
+        over: analyticalOverProb !== null ? analyticalOverProb * 100 : null,
+        under: analyticalOverProb !== null ? (1 - analyticalOverProb) * 100 : null
+      },
+      simulation: simulation ? {
+        winHome: simulation.team1WinRate * 100,
+        winAway: simulation.team2WinRate * 100,
+        coverHome: simulation.spread ? simulation.spread.homeCover * 100 : null,
+        coverAway: simulation.spread ? simulation.spread.awayCover * 100 : null,
+        pushSpread: simulation.spread ? simulation.spread.push * 100 : null,
+        over: simulation.totals ? simulation.totals.over * 100 : null,
+        under: simulation.totals ? simulation.totals.under * 100 : null,
+        pushTotal: simulation.totals ? simulation.totals.push * 100 : null,
+        averages: simulation.averages,
+        percentiles: simulation.percentiles
+      } : null,
+      active: probSource
+    };
+
+    return {
+      team1WinProb: activeWinProbHome*100,
+      team2WinProb: activeWinProbAway*100,
+      team1FairOdds: probToAmerican(activeWinProbHome),
+      team2FairOdds: probToAmerican(activeWinProbAway),
+      predSpread: spread,
+      predTotal: total,
+      team1PredScore: sc1,
+      team2PredScore: sc2,
+      team1OffDefScore: offDefSc1,
+      team2OffDefScore: offDefSc2,
+      ml1Analysis: ml1,
+      ml2Analysis: ml2,
+      spreadAnalysis: spreadA,
+      totalsAnalysis: totalA,
+      t1AdjElo,
+      t2AdjElo,
+      insights,
+      liveBankroll,
+      maxBet,
+      probabilityBreakdown,
+      simulationSummary: simulation,
+      probabilitySource: probSource
+    };
   };
 
   const analysis = analyzeMatchup();
@@ -2638,6 +2750,36 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                   <div><label className={labelStyle}>Over</label><input type="text" value={bookOverOdds} onChange={(e) => setBookOverOdds(e.target.value)} placeholder="-110" className={inputStyle} /></div>
                   <div><label className={labelStyle}>Under</label><input type="text" value={bookUnderOdds} onChange={(e) => setBookUnderOdds(e.target.value)} placeholder="-110" className={inputStyle} /></div>
                 </div>
+
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex items-center justify-between gap-3 mt-2">
+                  <div>
+                    <p className="text-sm font-semibold text-indigo-800">🎲 Run Simulations</p>
+                    <p className="text-xs text-indigo-700">Monte Carlo with sport variance to validate model edges</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1 text-sm text-indigo-800">
+                      <input type="checkbox" checked={useSimulation} onChange={(e) => setUseSimulation(e.target.checked)} className="rounded" />
+                      Enable
+                    </label>
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="text-indigo-700">Sims</span>
+                      <input
+                        type="number"
+                        min="500"
+                        max="15000"
+                        step="500"
+                        value={simulationRuns}
+                        onChange={(e) => setSimulationRuns(Math.max(500, Math.min(15000, parseInt(e.target.value) || 0)))}
+                        className="w-20 p-1 border border-indigo-200 rounded"
+                        disabled={!useSimulation}
+                      />
+                    </div>
+                    <label className="flex items-center gap-1 text-xs text-indigo-700">
+                      <input type="checkbox" checked={showSimPercentiles} onChange={(e) => setShowSimPercentiles(e.target.checked)} className="rounded" disabled={!useSimulation} />
+                      Percentiles
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2645,20 +2787,60 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               {analysis ? (
                 <>
                   <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 text-white">
-                    <h3 className="font-bold mb-3">Model Prediction</h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-bold">Model Prediction</h3>
+                      <span className="text-[10px] px-2 py-1 rounded-full border border-slate-600 text-slate-200">Using {analysis.probabilitySource === 'simulation' ? 'simulation + EV' : 'analytical model'}</span>
+                    </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                       <div><p className="text-slate-400 text-xs">{team1.split(' ').pop()} Win %</p><p className="text-2xl font-bold text-blue-400">{analysis.team1WinProb.toFixed(1)}%</p><p className="text-xs text-slate-500">Fair: {analysis.team1FairOdds}</p><p className="text-xs text-slate-600">Adj Elo: {analysis.t1AdjElo}</p></div>
                       <div><p className="text-slate-400 text-xs">{team2.split(' ').pop()} Win %</p><p className="text-2xl font-bold text-blue-400">{analysis.team2WinProb.toFixed(1)}%</p><p className="text-xs text-slate-500">Fair: {analysis.team2FairOdds}</p><p className="text-xs text-slate-600">Adj Elo: {analysis.t2AdjElo}</p></div>
                       <div><p className="text-slate-400 text-xs">Predicted Spread</p><p className="text-2xl font-bold">{team1.split(' ').pop()} {analysis.predSpread > 0 ? '+' : ''}{analysis.predSpread.toFixed(1)}</p></div>
                       <div><p className="text-slate-400 text-xs">Predicted Total</p><p className="text-2xl font-bold">{analysis.predTotal.toFixed(1)}</p></div>
                     </div>
+                    {analysis.probabilityBreakdown?.simulation && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-xs">
+                        <div className="p-3 rounded-lg bg-slate-800 text-slate-200 border border-slate-700">
+                          <div className="flex justify-between items-center mb-2">
+                            <p className="font-semibold text-slate-100">Analytical</p>
+                            <span className="text-[10px] text-slate-400">Model</span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between"><span>Win {team1.split(' ').pop()}</span><span>{analysis.probabilityBreakdown.analytical.winHome?.toFixed(1) ?? '--'}%</span></div>
+                            <div className="flex justify-between"><span>Win {team2.split(' ').pop()}</span><span>{analysis.probabilityBreakdown.analytical.winAway?.toFixed(1) ?? '--'}%</span></div>
+                            <div className="flex justify-between"><span>Cover {team1.split(' ').pop()}</span><span>{analysis.probabilityBreakdown.analytical.coverHome?.toFixed(1) ?? '--'}%</span></div>
+                            <div className="flex justify-between"><span>Over</span><span>{analysis.probabilityBreakdown.analytical.over?.toFixed(1) ?? '--'}%</span></div>
+                          </div>
+                        </div>
+                        <div className="p-3 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
+                          <div className="flex justify-between items-center mb-2">
+                            <p className="font-semibold">Simulation</p>
+                            <span className="text-[10px] text-amber-600">{simulationRuns.toLocaleString()} sims</span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between"><span>Win {team1.split(' ').pop()}</span><span>{analysis.probabilityBreakdown.simulation.winHome?.toFixed(1) ?? '--'}%</span></div>
+                            <div className="flex justify-between"><span>Win {team2.split(' ').pop()}</span><span>{analysis.probabilityBreakdown.simulation.winAway?.toFixed(1) ?? '--'}%</span></div>
+                            <div className="flex justify-between"><span>Cover {team1.split(' ').pop()}</span><span>{analysis.probabilityBreakdown.simulation.coverHome?.toFixed(1) ?? '--'}%</span></div>
+                            <div className="flex justify-between"><span>Over</span><span>{analysis.probabilityBreakdown.simulation.over?.toFixed(1) ?? '--'}%</span></div>
+                            {analysis.probabilityBreakdown.simulation.pushSpread !== null && <div className="flex justify-between text-[11px]"><span>Spread Push</span><span>{analysis.probabilityBreakdown.simulation.pushSpread?.toFixed(1)}%</span></div>}
+                            {analysis.probabilityBreakdown.simulation.pushTotal !== null && <div className="flex justify-between text-[11px]"><span>Total Push</span><span>{analysis.probabilityBreakdown.simulation.pushTotal?.toFixed(1)}%</span></div>}
+                          </div>
+                          {analysis.probabilityBreakdown.simulation.percentiles && (
+                            <div className="mt-2 text-[11px]">
+                              <p className="font-semibold text-amber-700">Score percentiles</p>
+                              <p>{team2.split(' ').pop()}: {analysis.probabilityBreakdown.simulation.percentiles.team2.p10.toFixed(1)} / {analysis.probabilityBreakdown.simulation.percentiles.team2.p50.toFixed(1)} / {analysis.probabilityBreakdown.simulation.percentiles.team2.p90.toFixed(1)}</p>
+                              <p>{team1.split(' ').pop()}: {analysis.probabilityBreakdown.simulation.percentiles.team1.p10.toFixed(1)} / {analysis.probabilityBreakdown.simulation.percentiles.team1.p50.toFixed(1)} / {analysis.probabilityBreakdown.simulation.percentiles.team1.p90.toFixed(1)}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {/* Predicted Score Display */}
                     <div className="mt-3 pt-3 border-t border-slate-700 text-center">
                       <p className="text-slate-400 text-xs mb-1">Predicted Score (Elo-based)</p>
                       <p className="text-lg font-bold">
                         <span className="text-blue-300">{team2.split(' ').pop()}</span>
                         <span className="text-white mx-2">
-                          {sport === 'nhl' 
+                          {sport === 'nhl'
                             ? `${analysis.team2PredScore.toFixed(1)} - ${analysis.team1PredScore.toFixed(1)}`
                             : `${Math.round(analysis.team2PredScore)} - ${Math.round(analysis.team1PredScore)}`
                           }
@@ -2709,6 +2891,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className={cardStyle}>
                       <h3 className="font-bold text-sm mb-2">💰 Moneyline</h3>
+                      <p className="text-[11px] text-gray-500 mb-2">Probabilities from {analysis.ml1Analysis?.probSource === 'simulation' || analysis.ml2Analysis?.probSource === 'simulation' ? 'simulation output' : 'analytical model'}</p>
                       {analysis.ml1Analysis ? (
                         <div className={`p-2 rounded mb-2 border ${analysis.ml1Analysis.isPositive ? analysis.ml1Analysis.confidence.bg : 'bg-gray-50 border-gray-200'}`}>
                           <div className="flex justify-between items-center"><p className="font-medium text-sm">{team1.split(' ').pop()}</p>{analysis.ml1Analysis.isPositive && <span className={`text-xs ${analysis.ml1Analysis.confidence.color}`}>{analysis.ml1Analysis.confidence.stars}</span>}</div>
@@ -2729,9 +2912,12 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
 
                     <div className={cardStyle}>
                       <h3 className="font-bold text-sm mb-2">📊 Spread</h3>
+                      <p className="text-[11px] text-gray-500">Probabilities from {analysis.spreadAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}{analysis.spreadAnalysis.pushProb ? ` • Push: ${analysis.spreadAnalysis.pushProb.toFixed(1)}%` : ''}</p>
                       {analysis.spreadAnalysis ? (
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm"><span>Model:</span><span className="font-bold">{team1.split(' ').pop()} {analysis.spreadAnalysis.predictedSpread > 0 ? '+' : ''}{analysis.spreadAnalysis.predictedSpread.toFixed(1)}</span></div>
+                          <div className="flex justify-between text-[11px] text-gray-500"><span>Analytical cover:</span><span>{analysis.spreadAnalysis.modelCoverProb !== null && analysis.spreadAnalysis.modelCoverProb !== undefined ? `${analysis.spreadAnalysis.modelCoverProb.toFixed(1)}%` : '--'}</span></div>
+                          <div className="flex justify-between text-[11px] text-gray-500"><span>Sim cover:</span><span>{analysis.spreadAnalysis.simCoverProb !== null && analysis.spreadAnalysis.simCoverProb !== undefined ? `${analysis.spreadAnalysis.simCoverProb.toFixed(1)}%` : '--'}</span></div>
                           <div className={`p-2 rounded border ${analysis.spreadAnalysis.isHomePositive ? analysis.spreadAnalysis.homeConfidence.bg : 'bg-gray-50 border-gray-200'}`}>
                             <div className="flex justify-between text-xs"><span className="font-medium">{team1.split(' ').pop()} {analysis.spreadAnalysis.homeSpread > 0 ? '+' : ''}{analysis.spreadAnalysis.homeSpread}</span>{analysis.spreadAnalysis.isHomePositive && <span className={analysis.spreadAnalysis.homeConfidence.color}>{analysis.spreadAnalysis.homeConfidence.stars}</span>}</div>
                             <div className="flex justify-between text-xs"><span>Cover:</span><span>{analysis.spreadAnalysis.homeCoverProb.toFixed(1)}%</span></div>
@@ -2750,9 +2936,12 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
 
                     <div className={cardStyle}>
                       <h3 className="font-bold text-sm mb-2">🎯 Total</h3>
+                      <p className="text-[11px] text-gray-500">Probabilities from {analysis.totalsAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}{analysis.totalsAnalysis.pushProb ? ` • Push: ${analysis.totalsAnalysis.pushProb.toFixed(1)}%` : ''}</p>
                       {analysis.totalsAnalysis ? (
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm"><span>Model:</span><span className="font-bold">{analysis.totalsAnalysis.predictedTotal.toFixed(1)}</span></div>
+                          <div className="flex justify-between text-[11px] text-gray-500"><span>Analytical over:</span><span>{analysis.totalsAnalysis.modelOverProb !== null && analysis.totalsAnalysis.modelOverProb !== undefined ? `${analysis.totalsAnalysis.modelOverProb.toFixed(1)}%` : '--'}</span></div>
+                          <div className="flex justify-between text-[11px] text-gray-500"><span>Sim over:</span><span>{analysis.totalsAnalysis.simOverProb !== null && analysis.totalsAnalysis.simOverProb !== undefined ? `${analysis.totalsAnalysis.simOverProb.toFixed(1)}%` : '--'}</span></div>
                           <div className={`p-2 rounded border ${analysis.totalsAnalysis.isOverPositive ? analysis.totalsAnalysis.overConfidence.bg : 'bg-gray-50 border-gray-200'}`}>
                             <div className="flex justify-between text-xs"><span className="font-medium">OVER {bookTotal}</span>{analysis.totalsAnalysis.isOverPositive && <span className={analysis.totalsAnalysis.overConfidence.color}>{analysis.totalsAnalysis.overConfidence.stars}</span>}</div>
                             <div className="flex justify-between text-xs"><span>Prob:</span><span>{analysis.totalsAnalysis.overProb.toFixed(1)}%</span></div>
