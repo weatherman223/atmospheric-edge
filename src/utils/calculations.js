@@ -46,9 +46,19 @@ export const americanToImpliedProb = (o) => {
  * @returns {string} American odds (e.g., "-110", "+150")
  */
 export const probToAmerican = (p) => {
-  return p >= 0.5
-    ? Math.round(-100 * p / (1 - p))
-    : '+' + Math.round(100 * (1 - p) / p);
+  const EPSILON = 1e-4;
+  const bounded = Math.min(Math.max(p, EPSILON), 1 - EPSILON);
+  const isEvenMoney = Math.abs(bounded - 0.5) < 1e-9;
+
+  if (isEvenMoney) return '+100';
+
+  if (bounded >= 0.5) {
+    const favoriteOdds = Math.round(-100 * bounded / (1 - bounded));
+    return `${favoriteOdds}`;
+  }
+
+  const underdogOdds = Math.round(100 * (1 - bounded) / bounded);
+  return `+${underdogOdds}`;
 };
 
 /**
@@ -81,8 +91,9 @@ export const calculateEV = (p, o) => {
  */
 export const kellyStake = (p, o, b, f) => {
   const d = americanToDecimal(o);
-  const k = ((d - 1) * p - (1 - p)) / (d - 1);
-  return Math.max(0, k * f * b);
+  const rawKellyFraction = ((d - 1) * p - (1 - p)) / (d - 1);
+  const cappedFraction = Math.min(Math.max(rawKellyFraction, 0), 1);
+  return cappedFraction * f * b;
 };
 
 /**
