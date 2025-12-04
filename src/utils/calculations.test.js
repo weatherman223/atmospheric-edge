@@ -109,14 +109,14 @@ describe('americanToImpliedProb', () => {
 });
 
 describe('probToAmerican', () => {
-  it('converts 50% to +100 or -100', () => {
+  it('converts 50% to +100', () => {
     const result = probToAmerican(0.5);
-    expect(result).toBe(-100);
+    expect(result).toBe('+100');
   });
 
   it('converts favorites (>50%) to negative odds', () => {
-    expect(probToAmerican(0.6)).toBe(-150);
-    expect(probToAmerican(0.7)).toBe(-233);
+    expect(probToAmerican(0.6)).toBe('-150');
+    expect(probToAmerican(0.7)).toBe('-233');
   });
 
   it('converts underdogs (<50%) to positive odds', () => {
@@ -125,8 +125,13 @@ describe('probToAmerican', () => {
   });
 
   it('handles edge cases', () => {
-    expect(probToAmerican(0.9)).toBe(-900);
+    expect(probToAmerican(0.9)).toBe('-900');
     expect(probToAmerican(0.1)).toBe('+900');
+  });
+
+  it('guards against 0 and 1 probabilities', () => {
+    expect(probToAmerican(0)).toBe('+999900');
+    expect(probToAmerican(1)).toBe('-999900');
   });
 });
 
