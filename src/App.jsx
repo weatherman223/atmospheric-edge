@@ -2915,7 +2915,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       <p className="text-[11px] text-gray-500">
                         {analysis.spreadAnalysis
                           ? `Probabilities from ${analysis.spreadAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}${analysis.spreadAnalysis.pushProb ? ` • Push: ${analysis.spreadAnalysis.pushProb.toFixed(1)}%` : ''}`
-                          : 'Enter spread to view cover probabilities'}
+                          : 'Enter spread'}
                       </p>
                       {analysis.spreadAnalysis ? (
                         <div className="space-y-2">
