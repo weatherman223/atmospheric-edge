@@ -285,14 +285,14 @@ This application could benefit from:
 ## Security & Best Practices
 
 ### Current Implementation
-- ✅ API keys stored in localStorage (frontend only)
+- ⚠️ API keys are currently stored in localStorage (frontend only) — **this is insecure and not recommended for production. Any XSS or third-party script can access localStorage and steal API keys.**
 - ✅ No backend/database (all data client-side)
 - ✅ No authentication/authorization needed
 - ✅ HTTPS required for production (Vite handles dev)
 
 ### Recommendations for Production
-1. **Environment Variables**: Use `.env` for API keys during build
-2. **API Key Management**: Consider backend proxy for OpenRouter API
+1. **Environment Variables**: Use `.env` for API keys during build (never expose sensitive keys to the frontend)
+2. **API Key Management**: Do **not** store API keys in localStorage. Use a backend proxy to handle OpenRouter API requests and store keys server-side. If strictly client-side, prompt users to enter their API key per session (do not persist in localStorage or sessionStorage).
 3. **Data Backup**: localStorage can be cleared, implement export/import
 4. **Input Validation**: Validate all user inputs (odds, scores, stakes)
 5. **Error Boundaries**: Add React Error Boundaries for graceful failures
