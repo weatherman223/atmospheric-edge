@@ -2912,7 +2912,11 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
 
                     <div className={cardStyle}>
                       <h3 className="font-bold text-sm mb-2">📊 Spread</h3>
-                      <p className="text-[11px] text-gray-500">Probabilities from {analysis.spreadAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}{analysis.spreadAnalysis.pushProb ? ` • Push: ${analysis.spreadAnalysis.pushProb.toFixed(1)}%` : ''}</p>
+                      <p className="text-[11px] text-gray-500">
+                        {analysis.spreadAnalysis
+                          ? `Probabilities from ${analysis.spreadAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}${analysis.spreadAnalysis.pushProb ? ` • Push: ${analysis.spreadAnalysis.pushProb.toFixed(1)}%` : ''}`
+                          : 'Enter spread'}
+                      </p>
                       {analysis.spreadAnalysis ? (
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm"><span>Model:</span><span className="font-bold">{team1.split(' ').pop()} {analysis.spreadAnalysis.predictedSpread > 0 ? '+' : ''}{analysis.spreadAnalysis.predictedSpread.toFixed(1)}</span></div>
@@ -2936,7 +2940,11 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
 
                     <div className={cardStyle}>
                       <h3 className="font-bold text-sm mb-2">🎯 Total</h3>
-                      <p className="text-[11px] text-gray-500">Probabilities from {analysis.totalsAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}{analysis.totalsAnalysis.pushProb ? ` • Push: ${analysis.totalsAnalysis.pushProb.toFixed(1)}%` : ''}</p>
+                      <p className="text-[11px] text-gray-500">
+                        {analysis.totalsAnalysis
+                          ? `Probabilities from ${analysis.totalsAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}${analysis.totalsAnalysis.pushProb ? ` • Push: ${analysis.totalsAnalysis.pushProb.toFixed(1)}%` : ''}`
+                          : 'Enter total'}
+                      </p>
                       {analysis.totalsAnalysis ? (
                         <div className="space-y-2">
                           <div className="flex justify-between text-sm"><span>Model:</span><span className="font-bold">{analysis.totalsAnalysis.predictedTotal.toFixed(1)}</span></div>
