@@ -33,7 +33,23 @@ const percentile = (arr, p) => {
  * @param {number|null} [params.bookTotal=null] - Sportsbook total line
  * @param {boolean} [params.includePercentiles=false] - Include percentile score outputs
  * @param {number} [params.skew=0.1] - Adds light positive skew to totals (0-1)
- * @returns {object} Simulation summary with win/cover/total frequencies
+ * @returns {object} An object containing simulation summary statistics:
+ *   @property {number} team1WinRate - Proportion of simulations where team 1 wins.
+ *   @property {number} team2WinRate - Proportion of simulations where team 2 wins.
+ *   @property {number} team1CoverRate - Proportion of simulations where team 1 covers the spread (if bookSpread provided).
+ *   @property {number} team2CoverRate - Proportion of simulations where team 2 covers the spread (if bookSpread provided).
+ *   @property {number} overRate - Proportion of simulations where total score is over the bookTotal (if bookTotal provided).
+ *   @property {number} underRate - Proportion of simulations where total score is under the bookTotal (if bookTotal provided).
+ *   @property {object} averages - Average scores and margins:
+ *     @property {number} team1AvgScore - Average simulated score for team 1.
+ *     @property {number} team2AvgScore - Average simulated score for team 2.
+ *     @property {number} avgMargin - Average simulated margin (team 1 minus team 2).
+ *     @property {number} avgTotal - Average simulated total score.
+ *   @property {object} [percentiles] - Percentile statistics for scores and margins (if includePercentiles is true):
+ *     @property {object} team1Score - Percentiles for team 1 score (keys: p5, p25, p50, p75, p95).
+ *     @property {object} team2Score - Percentiles for team 2 score (keys: p5, p25, p50, p75, p95).
+ *     @property {object} margin - Percentiles for margin (keys: p5, p25, p50, p75, p95).
+ *     @property {object} total - Percentiles for total score (keys: p5, p25, p50, p75, p95).
  */
 export const runScoreSimulations = ({
   predictedSpread,
