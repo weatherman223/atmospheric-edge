@@ -2261,7 +2261,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
         predictedSpread: spread,
         source: probSource,
         modelCoverProb: analyticalCoverProb !== null ? analyticalCoverProb * 100 : null,
-        simCoverProb: simulation?.spread?.homeCover ? simulation.spread.homeCover * 100 : null,
+        simCoverProb: simulation?.spread?.homeCover !== undefined && simulation?.spread?.homeCover !== null ? simulation.spread.homeCover * 100 : null,
         // Home team (team1) - the spread as entered
         homeCoverProb: coverProbHome * 100,
         homeEV: ev1,
