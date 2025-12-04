@@ -2915,7 +2915,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       <p className="text-[11px] text-gray-500">
                         {analysis.spreadAnalysis
                           ? `Probabilities from ${analysis.spreadAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}${analysis.spreadAnalysis.pushProb ? ` • Push: ${analysis.spreadAnalysis.pushProb.toFixed(1)}%` : ''}`
-                          : 'Enter spread to view cover probabilities'}
+                          : 'Enter spread'}
                       </p>
                       {analysis.spreadAnalysis ? (
                         <div className="space-y-2">
@@ -2943,7 +2943,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       <p className="text-[11px] text-gray-500">
                         {analysis.totalsAnalysis
                           ? `Probabilities from ${analysis.totalsAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}${analysis.totalsAnalysis.pushProb ? ` • Push: ${analysis.totalsAnalysis.pushProb.toFixed(1)}%` : ''}`
-                          : 'Enter total to view over/under probabilities'}
+                          : 'Enter total'}
                       </p>
                       {analysis.totalsAnalysis ? (
                         <div className="space-y-2">
