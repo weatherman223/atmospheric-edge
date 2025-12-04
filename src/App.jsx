@@ -2201,7 +2201,8 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
       team2Rest,
       team1Motivation,
       team2Motivation,
-      isNeutral
+      isNeutral,
+      showSimPercentiles
     });
 
     if (useSimulation) {
