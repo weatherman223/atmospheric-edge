@@ -2294,7 +2294,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
         predictedTotal: total,
         source: probSource,
         modelOverProb: analyticalOverProb !== null ? analyticalOverProb * 100 : null,
-        simOverProb: simulation?.totals?.over ? simulation.totals.over * 100 : null,
+        simOverProb: simulation?.totals?.over !== undefined && simulation?.totals?.over !== null ? simulation.totals.over * 100 : null,
         overProb: overProbActive*100,
         underProb: underProbActive*100,
         overEV,
