@@ -2178,8 +2178,8 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
     const sc1 = eloSc1;
     const sc2 = eloSc2;
 
-    const bookSpreadVal = bookSpread ? safeParseFloat(bookSpread) : null;
-    const bookTotalVal = bookTotal ? safeParseFloat(bookTotal) : null;
+    const bookSpreadVal = bookSpread?.trim() === '' ? null : safeParseFloat(bookSpread, null);
+    const bookTotalVal = bookTotal?.trim() === '' ? null : safeParseFloat(bookTotal, null);
     const analyticalCoverProb = bookSpreadVal !== null ? spreadCoverProb(spread, bookSpreadVal, sportConfig[sport]) : null;
     const analyticalOverProb = bookTotalVal !== null ? totalProb(total, bookTotalVal, true, sportConfig[sport]) : null;
 
