@@ -232,6 +232,10 @@ const SportsBettingModelPro = () => {
   const lastSavedSportRef = React.useRef(sport);
   const isInitialMount = React.useRef(true);
   const teamsSportRef = React.useRef(sport); // Track which sport the current teams belong to
+  
+  // Debounce localStorage save to prevent performance issues
+  const saveTimeoutRef = useRef(null);
+  const pendingDataRef = useRef(null);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -272,7 +276,7 @@ const SportsBettingModelPro = () => {
     isInitialMount.current = false;
   }, []);
 
-  // Save to localStorage whenever key state changes
+  // Save to localStorage whenever key state changes (debounced for performance)
   useEffect(() => {
     // Skip saving on initial mount and during sport transitions
     if (isInitialMount.current) return;
@@ -283,20 +287,79 @@ const SportsBettingModelPro = () => {
       return; // Teams don't match current sport, skip save
     }
     
-    const saved = localStorage.getItem('sportsBettingModel');
-    let existingTeamsBySport = {};
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        existingTeamsBySport = data.teamsBySport || {};
-      } catch (e) {}
+    // Store the data to be saved
+    pendingDataRef.current = { teams, bets, gameLog, bankroll, kellyFraction, openRouterApiKey, aiModel, enableWebSearch, sport };
+    
+    // Clear any existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
-    // Update teams for current sport only
-    const teamsBySport = { ...existingTeamsBySport, [sport]: teams };
-    const data = { teamsBySport, bets, gameLog, bankroll, kellyFraction, openRouterApiKey, aiModel, enableWebSearch, sport };
-    localStorage.setItem('sportsBettingModel', JSON.stringify(data));
-    lastSavedSportRef.current = sport;
+    
+    // Debounce the save operation (300ms delay)
+    saveTimeoutRef.current = setTimeout(() => {
+      if (!pendingDataRef.current) return;
+      
+      const { teams: saveTeams, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
+              kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
+              aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport } = pendingDataRef.current;
+      
+      const saved = localStorage.getItem('sportsBettingModel');
+      let existingTeamsBySport = {};
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          existingTeamsBySport = data.teamsBySport || {};
+        } catch {
+          // Failed to parse saved data, use empty object
+        }
+      }
+      // Update teams for current sport only
+      const teamsBySport = { ...existingTeamsBySport, [saveSport]: saveTeams };
+      const data = { teamsBySport, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
+                     kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
+                     aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport };
+      localStorage.setItem('sportsBettingModel', JSON.stringify(data));
+      lastSavedSportRef.current = saveSport;
+      pendingDataRef.current = null;
+    }, 300);
+    
+    // Cleanup timeout on unmount or when dependencies change
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [teams, bets, gameLog, bankroll, kellyFraction, openRouterApiKey, aiModel, enableWebSearch, sport]);
+
+  // Save pending data immediately when user leaves the page
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (pendingDataRef.current) {
+        const { teams: saveTeams, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
+                kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
+                aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport } = pendingDataRef.current;
+        
+        const saved = localStorage.getItem('sportsBettingModel');
+        let existingTeamsBySport = {};
+        if (saved) {
+          try {
+            const data = JSON.parse(saved);
+            existingTeamsBySport = data.teamsBySport || {};
+          } catch {
+            // Failed to parse saved data, use empty object
+          }
+        }
+        const teamsBySport = { ...existingTeamsBySport, [saveSport]: saveTeams };
+        const data = { teamsBySport, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
+                       kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
+                       aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport };
+        localStorage.setItem('sportsBettingModel', JSON.stringify(data));
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   // Load teams when sport changes
   useEffect(() => {
