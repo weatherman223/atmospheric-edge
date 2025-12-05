@@ -3365,7 +3365,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               <button onClick={updateRatings} disabled={!resultTeam1 || !resultTeam2 || score1 === '' || score2 === ''} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium disabled:opacity-50">Update Ratings</button>
             </div>
               <div className={cardStyle}>
-                <h2 className="text-lg font-bold mb-1">📜 Game Log</h2>
+                <h2 className="text-lg font-bold mb-3">📜 Game Log</h2>
                 {gameLog.length > 0 && (
                   <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
                     <span>
