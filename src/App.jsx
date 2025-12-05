@@ -234,8 +234,32 @@ const SportsBettingModelPro = () => {
   const teamsSportRef = React.useRef(sport); // Track which sport the current teams belong to
   
   // Debounce localStorage save to prevent performance issues
-  const saveTimeoutRef = useRef(null);
-  const pendingDataRef = useRef(null);
+  const saveTimeoutRef = React.useRef(null);
+  const pendingDataRef = React.useRef(null);
+  
+  // Reusable function to save data to localStorage
+  const saveToLocalStorage = (dataToSave) => {
+    const { teams: saveTeams, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
+            kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
+            aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport } = dataToSave;
+    
+    const saved = localStorage.getItem('sportsBettingModel');
+    let existingTeamsBySport = {};
+    if (saved) {
+      try {
+        const data = JSON.parse(saved);
+        existingTeamsBySport = data.teamsBySport || {};
+      } catch {
+        // Failed to parse saved data, use empty object
+      }
+    }
+    const teamsBySport = { ...existingTeamsBySport, [saveSport]: saveTeams };
+    const data = { teamsBySport, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
+                   kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
+                   aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport };
+    localStorage.setItem('sportsBettingModel', JSON.stringify(data));
+    lastSavedSportRef.current = saveSport;
+  };
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -298,28 +322,7 @@ const SportsBettingModelPro = () => {
     // Debounce the save operation (300ms delay)
     saveTimeoutRef.current = setTimeout(() => {
       if (!pendingDataRef.current) return;
-      
-      const { teams: saveTeams, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
-              kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
-              aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport } = pendingDataRef.current;
-      
-      const saved = localStorage.getItem('sportsBettingModel');
-      let existingTeamsBySport = {};
-      if (saved) {
-        try {
-          const data = JSON.parse(saved);
-          existingTeamsBySport = data.teamsBySport || {};
-        } catch {
-          // Failed to parse saved data, use empty object
-        }
-      }
-      // Update teams for current sport only
-      const teamsBySport = { ...existingTeamsBySport, [saveSport]: saveTeams };
-      const data = { teamsBySport, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
-                     kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
-                     aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport };
-      localStorage.setItem('sportsBettingModel', JSON.stringify(data));
-      lastSavedSportRef.current = saveSport;
+      saveToLocalStorage(pendingDataRef.current);
       pendingDataRef.current = null;
     }, 300);
     
@@ -335,25 +338,7 @@ const SportsBettingModelPro = () => {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (pendingDataRef.current) {
-        const { teams: saveTeams, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
-                kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
-                aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport } = pendingDataRef.current;
-        
-        const saved = localStorage.getItem('sportsBettingModel');
-        let existingTeamsBySport = {};
-        if (saved) {
-          try {
-            const data = JSON.parse(saved);
-            existingTeamsBySport = data.teamsBySport || {};
-          } catch {
-            // Failed to parse saved data, use empty object
-          }
-        }
-        const teamsBySport = { ...existingTeamsBySport, [saveSport]: saveTeams };
-        const data = { teamsBySport, bets: saveBets, gameLog: saveGameLog, bankroll: saveBankroll, 
-                       kellyFraction: saveKellyFraction, openRouterApiKey: saveApiKey, 
-                       aiModel: saveAiModel, enableWebSearch: saveWebSearch, sport: saveSport };
-        localStorage.setItem('sportsBettingModel', JSON.stringify(data));
+        saveToLocalStorage(pendingDataRef.current);
       }
     };
     
