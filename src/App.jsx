@@ -3373,7 +3373,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                     </span>
                     {hasMoreGameLog && (
                       <button
-                        onClick={() => setGameLogDisplayCount((prev) => Math.min(prev + 200, reversedGameLog.length))}
+                        onClick={() => setGameLogDisplayCount((prev) => Math.min(prev + 200, gameLog.length))}
                         className="text-indigo-600 hover:text-indigo-800 font-medium"
                       >
                         Load older entries
