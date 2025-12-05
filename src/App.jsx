@@ -3384,7 +3384,9 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                 {gameLog.length > 0 ? (
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {visibleGameLog.map((g, i) => {
-                      const actualIndex = gameLog.length - 1 - i; // Convert reversed index to actual
+                      // Map from visibleGameLog index to original gameLog index
+                      // visibleGameLog[i] = reversedGameLog[i] = gameLog[gameLog.length - 1 - i]
+                      const actualIndex = gameLog.length - 1 - i;
                       return (
                         <div key={i} className="p-3 bg-gray-50 rounded text-xs">
                           <div className="flex justify-between items-center mb-2">
