@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   safeParseFloat,
   eloToWinProb,
@@ -53,6 +53,7 @@ const SportsBettingModelPro = () => {
   const [score2, setScore2] = useState('');
   const [isOT, setIsOT] = useState(false); // NHL overtime/shootout flag for manual entry
   const [gameLog, setGameLog] = useState([]);
+  const [gameLogDisplayCount, setGameLogDisplayCount] = useState(200);
   
   // Bet Tracker State
   const [bets, setBets] = useState([]);
@@ -2587,6 +2588,12 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
 
   const analysis = analyzeMatchup();
   const teamList = Object.keys(teams).sort((a, b) => teams[b].elo - teams[a].elo);
+  const reversedGameLog = useMemo(() => [...gameLog].reverse(), [gameLog]);
+  const visibleGameLog = useMemo(
+    () => reversedGameLog.slice(0, gameLogDisplayCount),
+    [reversedGameLog, gameLogDisplayCount]
+  );
+  const hasMoreGameLog = reversedGameLog.length > gameLogDisplayCount;
   const config = sportConfig[sport];
   const stats = calculateStats();
   const inputStyle = "w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm";
@@ -3357,52 +3364,68 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               )}
               <button onClick={updateRatings} disabled={!resultTeam1 || !resultTeam2 || score1 === '' || score2 === ''} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium disabled:opacity-50">Update Ratings</button>
             </div>
-            <div className={cardStyle}>
-              <h2 className="text-lg font-bold mb-3">📜 Game Log</h2>
-              {gameLog.length > 0 ? (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {gameLog.slice().reverse().map((g, i) => {
-                    const actualIndex = gameLog.length - 1 - i; // Convert reversed index to actual
-                    return (
-                    <div key={i} className="p-3 bg-gray-50 rounded text-xs">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-medium">{g.team1} vs {g.team2}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold">{g.score}</span>
-                          <button 
-                            onClick={() => deleteGameFromLog(actualIndex)} 
-                            className="text-red-400 hover:text-red-600" 
-                            title="Delete game and recalculate ratings"
-                          >🗑️</button>
-                        </div>
-                      </div>
-                      {g.t1Changes && g.t2Changes ? (
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="bg-white p-2 rounded">
-                            <p className="font-medium text-gray-600 mb-1">{g.team1}</p>
-                            <div className="flex gap-2">
-                              <span className={g.t1Changes.elo >= 0 ? 'text-emerald-600' : 'text-red-600'}>Elo: {g.t1Changes.elo >= 0 ? '+' : ''}{g.t1Changes.elo}</span>
-                              <span className={g.t1Changes.off >= 0 ? 'text-emerald-600' : 'text-red-600'}>Off: {g.t1Changes.off >= 0 ? '+' : ''}{g.t1Changes.off}</span>
-                              <span className={g.t1Changes.def >= 0 ? 'text-emerald-600' : 'text-red-600'}>Def: {g.t1Changes.def >= 0 ? '+' : ''}{g.t1Changes.def}</span>
+              <div className={cardStyle}>
+                <h2 className="text-lg font-bold mb-1">📜 Game Log</h2>
+                {gameLog.length > 0 && (
+                  <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                    <span>
+                      Showing {Math.min(gameLogDisplayCount, gameLog.length)} of {gameLog.length} games
+                    </span>
+                    {hasMoreGameLog && (
+                      <button
+                        onClick={() => setGameLogDisplayCount((prev) => Math.min(prev + 200, reversedGameLog.length))}
+                        className="text-indigo-600 hover:text-indigo-800 font-medium"
+                      >
+                        Load older entries
+                      </button>
+                    )}
+                  </div>
+                )}
+                {gameLog.length > 0 ? (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {visibleGameLog.map((g, i) => {
+                      const actualIndex = gameLog.length - 1 - i; // Convert reversed index to actual
+                      return (
+                        <div key={i} className="p-3 bg-gray-50 rounded text-xs">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-medium">{g.team1} vs {g.team2}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold">{g.score}</span>
+                              <button
+                                onClick={() => deleteGameFromLog(actualIndex)}
+                                className="text-red-400 hover:text-red-600"
+                                title="Delete game and recalculate ratings"
+                              >🗑️</button>
                             </div>
                           </div>
-                          <div className="bg-white p-2 rounded">
-                            <p className="font-medium text-gray-600 mb-1">{g.team2}</p>
-                            <div className="flex gap-2">
-                              <span className={g.t2Changes.elo >= 0 ? 'text-emerald-600' : 'text-red-600'}>Elo: {g.t2Changes.elo >= 0 ? '+' : ''}{g.t2Changes.elo}</span>
-                              <span className={g.t2Changes.off >= 0 ? 'text-emerald-600' : 'text-red-600'}>Off: {g.t2Changes.off >= 0 ? '+' : ''}{g.t2Changes.off}</span>
-                              <span className={g.t2Changes.def >= 0 ? 'text-emerald-600' : 'text-red-600'}>Def: {g.t2Changes.def >= 0 ? '+' : ''}{g.t2Changes.def}</span>
+                          {g.t1Changes && g.t2Changes ? (
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="bg-white p-2 rounded">
+                                <p className="font-medium text-gray-600 mb-1">{g.team1}</p>
+                                <div className="flex gap-2">
+                                  <span className={g.t1Changes.elo >= 0 ? 'text-emerald-600' : 'text-red-600'}>Elo: {g.t1Changes.elo >= 0 ? '+' : ''}{g.t1Changes.elo}</span>
+                                  <span className={g.t1Changes.off >= 0 ? 'text-emerald-600' : 'text-red-600'}>Off: {g.t1Changes.off >= 0 ? '+' : ''}{g.t1Changes.off}</span>
+                                  <span className={g.t1Changes.def >= 0 ? 'text-emerald-600' : 'text-red-600'}>Def: {g.t1Changes.def >= 0 ? '+' : ''}{g.t1Changes.def}</span>
+                                </div>
+                              </div>
+                              <div className="bg-white p-2 rounded">
+                                <p className="font-medium text-gray-600 mb-1">{g.team2}</p>
+                                <div className="flex gap-2">
+                                  <span className={g.t2Changes.elo >= 0 ? 'text-emerald-600' : 'text-red-600'}>Elo: {g.t2Changes.elo >= 0 ? '+' : ''}{g.t2Changes.elo}</span>
+                                  <span className={g.t2Changes.off >= 0 ? 'text-emerald-600' : 'text-red-600'}>Off: {g.t2Changes.off >= 0 ? '+' : ''}{g.t2Changes.off}</span>
+                                  <span className={g.t2Changes.def >= 0 ? 'text-emerald-600' : 'text-red-600'}>Def: {g.t2Changes.def >= 0 ? '+' : ''}{g.t2Changes.def}</span>
+                                </div>
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <span className="text-emerald-600">±{g.eloChange}</span>
+                          )}
                         </div>
-                      ) : (
-                        <span className="text-emerald-600">±{g.eloChange}</span>
-                      )}
-                    </div>
-                  )})}
-                </div>
-              ) : <p className="text-gray-400 text-sm">No games recorded</p>}
-            </div>
+                      );
+                    })}
+                  </div>
+                ) : <p className="text-gray-400 text-sm">No games recorded</p>}
+              </div>
             
             {/* ESPN/NCAA Import */}
             <div className={`${cardStyle} lg:col-span-2`}>
