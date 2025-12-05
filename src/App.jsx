@@ -367,6 +367,7 @@ const SportsBettingModelPro = () => {
       teamsSportRef.current = sport;
       setBets(filteredBets);
       setGameLog(filteredGameLog);
+      setGameLogDisplayCount(200);
       setTeam1('');
       setTeam2('');
       resetContextAdjustments();
@@ -638,6 +639,7 @@ const SportsBettingModelPro = () => {
       });
     }
     setGameLog([]); // Clear game log since ratings are reset
+    setGameLogDisplayCount(200); // Reset display count when game log is cleared
   };
 
   // ESPN Import Functions
