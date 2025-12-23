@@ -353,6 +353,447 @@ This feature transforms the bet tracker from a simple record-keeper into a **mod
 
 ---
 
+## Implementation Details for Each Improvement
+
+### 1. Dynamic K-Factor
+
+**Difficulty: Easy** ⭐
+
+**Current Code** (`src/App.jsx:416`):
+```javascript
+const baseEloChange = Math.round(c.kFactor * Math.min(Math.log(mov * (c.marginMult || 1) + 1)*0.8+1, 2.5) * (1-exp));
+```
+
+**Required Changes:**
+
+1. Add `gamesPlayed` to team object in initial teams (`src/App.jsx:122-230`):
+```javascript
+'New England Patriots': { elo: 1680, off: 108, def: 88, gamesPlayed: 0 },
+```
+
+2. Create dynamic K function (add to `src/utils/calculations.js`):
+```javascript
+export const getDynamicK = (baseK, gamesPlayed) => {
+  // K starts at 1.5x base, decays to 0.6x base over ~50 games
+  return baseK * Math.max(0.6, 1.5 - (gamesPlayed / 50));
+};
+```
+
+3. Update `updateRatings()` and `importSelectedGames()` to use dynamic K:
+```javascript
+const avgGamesPlayed = (t1.gamesPlayed + t2.gamesPlayed) / 2;
+const dynamicK = getDynamicK(c.kFactor, avgGamesPlayed);
+const baseEloChange = Math.round(dynamicK * Math.min(...));
+```
+
+4. Increment `gamesPlayed` when updating teams:
+```javascript
+[resultTeam1]: {
+  ...prev[resultTeam1],
+  elo: prev[resultTeam1].elo + t1EloChange,
+  gamesPlayed: (prev[resultTeam1].gamesPlayed || 0) + 1,
+  // ...
+}
+```
+
+**Files Changed:** 2 (`App.jsx`, `calculations.js`)
+**Lines Changed:** ~20
+
+---
+
+### 2. Margin of Victory Sport-Specific Scaling
+
+**Difficulty: Medium** ⭐⭐
+
+**Current Code** (`src/App.jsx:416`):
+```javascript
+Math.min(Math.log(mov * (c.marginMult || 1) + 1) * 0.8 + 1, 2.5)
+```
+
+**Required Changes:**
+
+1. Add MOV function to `sportConfig` (`src/App.jsx:103-111`):
+```javascript
+nfl: {
+  // ... existing config
+  movScale: (mov) => {
+    // NFL: Key numbers at 3, 7, 10 - winning by 3 is more common than 4
+    if (mov <= 3) return 1.0;
+    if (mov <= 7) return 1.0 + (mov - 3) * 0.15;
+    if (mov <= 14) return 1.6 + (mov - 7) * 0.1;
+    return Math.min(2.3, 2.3 + (mov - 14) * 0.02);
+  }
+},
+nhl: {
+  movScale: (mov) => {
+    // NHL: Each goal is huge, but cap at 4 goals
+    return Math.min(2.5, 1.0 + mov * 0.5);
+  }
+}
+```
+
+2. Update Elo calculation:
+```javascript
+const movMultiplier = c.movScale ? c.movScale(mov) : Math.min(Math.log(mov * (c.marginMult || 1) + 1) * 0.8 + 1, 2.5);
+const baseEloChange = Math.round(c.kFactor * movMultiplier * (1 - exp));
+```
+
+**Files Changed:** 1 (`App.jsx`)
+**Lines Changed:** ~30
+
+---
+
+### 3. Confidence-Weighted Off/Def Updates
+
+**Difficulty: Easy** ⭐
+
+**Current Code** (`src/App.jsx:432`):
+```javascript
+const offScale = 0.3;
+```
+
+**Required Changes:**
+
+1. Calculate dynamic scale based on games played:
+```javascript
+const t1Games = t1.gamesPlayed || 0;
+const t2Games = t2.gamesPlayed || 0;
+// Scale decreases as we have more data (more confident in current ratings)
+const offScale1 = 0.3 / Math.sqrt(t1Games / 5 + 1);
+const offScale2 = 0.3 / Math.sqrt(t2Games / 5 + 1);
+
+const t1OffDiff = Math.round((s1 - exp1) * offScale1);
+const t2OffDiff = Math.round((s2 - exp2) * offScale2);
+const t1DefDiff = Math.round((exp2 - s2) * offScale1);
+const t2DefDiff = Math.round((exp1 - s1) * offScale2);
+```
+
+**Files Changed:** 1 (`App.jsx`)
+**Lines Changed:** ~10
+
+---
+
+### 4. Regression to Mean for All Sports
+
+**Difficulty: Easy** ⭐
+
+**Current Code** (`src/App.jsx:384-389`):
+```javascript
+const regressRating = (val, sp) => {
+  if (sp === 'nba' || sp === 'cbb') {
+    const regressed = val * 0.925 + 100 * 0.075;
+    return Math.round(Math.max(80, Math.min(120, regressed)));
+  }
+  return Math.round(val);
+};
+```
+
+**Required Changes:**
+
+```javascript
+const regressRating = (val, sp) => {
+  const regressionRates = {
+    nba: 0.075,  // 7.5% - high volume, many games
+    cbb: 0.075,
+    nhl: 0.05,   // 5% - medium volume
+    nfl: 0.03,   // 3% - low volume, each game matters
+    cfb: 0.03,
+    d3mb: 0.06,
+    d3wb: 0.06,
+  };
+
+  const rate = regressionRates[sp] || 0;
+  if (rate === 0) return Math.round(val);
+
+  const regressed = val * (1 - rate) + 100 * rate;
+
+  // Tighter bounds for basketball
+  const bounds = (sp === 'nba' || sp === 'cbb' || sp === 'd3mb' || sp === 'd3wb')
+    ? [80, 120]
+    : [70, 130];
+
+  return Math.round(Math.max(bounds[0], Math.min(bounds[1], regressed)));
+};
+```
+
+**Files Changed:** 1 (`App.jsx`)
+**Lines Changed:** ~15
+
+---
+
+### 5. Team-Specific Home Advantage
+
+**Difficulty: Medium** ⭐⭐
+
+**Current Code** (`src/App.jsx:2136`):
+```javascript
+const ha = isNeutral ? 0 : c.homeAdvantage;
+```
+
+**Required Changes:**
+
+1. Add `homeBonus` to team objects:
+```javascript
+'Denver Broncos': { elo: 1660, off: 95, def: 84, homeBonus: 10 },  // Altitude
+'Seattle Seahawks': { elo: 1610, off: 108, def: 94, homeBonus: 8 }, // 12th Man
+```
+
+2. Update home advantage calculation:
+```javascript
+const teamHomeBonus = teams[team1]?.homeBonus || 0;
+const ha = isNeutral ? 0 : (c.homeAdvantage + teamHomeBonus);
+```
+
+3. (Optional) Add travel distance factor:
+```javascript
+// Add lat/long to teams, calculate distance for cross-country games
+const travelPenalty = calculateTravelPenalty(teams[team2], teams[team1]);
+const ha = isNeutral ? 0 : (c.homeAdvantage + teamHomeBonus - travelPenalty);
+```
+
+**Files Changed:** 1 (`App.jsx`)
+**Lines Changed:** ~20-50 depending on travel implementation
+
+---
+
+### 6. Recency Weighting
+
+**Difficulty: Medium-Hard** ⭐⭐⭐
+
+**Issue:** This requires storing timestamps with games and applying decay.
+
+**Required Changes:**
+
+1. Add timestamp to game log entries (`src/App.jsx:459-468`):
+```javascript
+setGameLog(prev => [...prev, {
+  date: new Date().toLocaleDateString(),
+  timestamp: Date.now(),  // NEW: Unix timestamp for decay calculation
+  // ... rest of fields
+}]);
+```
+
+2. Create recency multiplier function:
+```javascript
+const getRecencyMultiplier = (gameTimestamp, currentTimestamp) => {
+  const daysAgo = (currentTimestamp - gameTimestamp) / (1000 * 60 * 60 * 24);
+  const halfLife = 30; // Games lose half their weight after 30 days
+  return Math.pow(0.5, daysAgo / halfLife);
+};
+```
+
+3. Apply to Elo calculation:
+```javascript
+const recency = getRecencyMultiplier(gameTimestamp, Date.now());
+const baseEloChange = Math.round(c.kFactor * movMultiplier * (1 - exp) * recency);
+```
+
+**Challenge:** The `deleteGameFromLog` function recalculates all ratings from scratch. This would need to apply recency at recalculation time, which is complex.
+
+**Alternative (Easier):** Add a "form" indicator that tracks last 5 games separately from Elo, displayed in UI but not affecting core Elo.
+
+**Files Changed:** 1 (`App.jsx`)
+**Lines Changed:** ~40
+
+---
+
+### 7. Non-Normal Spread Distribution
+
+**Difficulty: Hard** ⭐⭐⭐⭐
+
+**Current Code** (`src/utils/calculations.js:125-140`):
+```javascript
+export const spreadCoverProb = (pred, book, sportConfig) => {
+  const diff = safeParseFloat(book) - pred;
+  const z = diff / (sportConfig.scoringVar * Math.sqrt(2));
+  // ... normal CDF via erf()
+};
+```
+
+**Required Changes:**
+
+1. Create empirical distribution lookup for NFL key numbers:
+```javascript
+// Based on historical margin distributions
+const nflMarginProbs = {
+  // probability mass at each margin (from historical data)
+  0: 0.005, 1: 0.025, 2: 0.030, 3: 0.095, 4: 0.040, 5: 0.035,
+  6: 0.055, 7: 0.080, 8: 0.030, 9: 0.020, 10: 0.055, // ... etc
+};
+
+export const spreadCoverProbNFL = (pred, book) => {
+  // Use empirical CDF instead of normal
+  let coverProb = 0;
+  for (let margin = -50; margin <= 50; margin++) {
+    const adjustedMargin = margin - pred;
+    if (adjustedMargin + book > 0) {
+      coverProb += nflMarginProbs[Math.abs(margin)] || 0.01;
+    }
+  }
+  return coverProb;
+};
+```
+
+2. Update `spreadCoverProb` to dispatch by sport:
+```javascript
+export const spreadCoverProb = (pred, book, sportConfig, sport) => {
+  if (sport === 'nfl') return spreadCoverProbNFL(pred, book);
+  if (sport === 'nhl') return spreadCoverProbNHL(pred, book);
+  // ... fallback to normal distribution
+};
+```
+
+**Challenge:** Requires sourcing historical margin distribution data for each sport.
+
+**Files Changed:** 1 (`calculations.js`)
+**Lines Changed:** ~100+
+
+---
+
+### 8. CLV Tracking (P1 Feature)
+
+**Difficulty: Low-Medium** ⭐⭐
+
+**Required Changes:**
+
+#### Step 1: Update bet state (`src/App.jsx:60-70`)
+
+```javascript
+const [newBet, setNewBet] = useState({
+  date: new Date().toISOString().split('T')[0],
+  sport: 'nfl',
+  game: '',
+  betType: 'ML',
+  pick: '',
+  odds: '',
+  closingOdds: '',  // NEW
+  stake: '',
+  result: 'pending',
+  payout: 0
+});
+```
+
+#### Step 2: Add CLV calculation (`src/utils/calculations.js`)
+
+```javascript
+/**
+ * Calculate Closing Line Value
+ * Positive CLV = you beat the closing line (good)
+ * Negative CLV = market moved against you (bad)
+ */
+export const calculateCLV = (openingOdds, closingOdds) => {
+  if (!closingOdds || closingOdds === '') return null;
+  const openProb = americanToImpliedProb(openingOdds);
+  const closeProb = americanToImpliedProb(closingOdds);
+  // CLV in percentage points
+  return (closeProb - openProb) * 100;
+};
+```
+
+#### Step 3: Update `calculateStats()` (`src/App.jsx:2121-2132`)
+
+```javascript
+const calculateStats = () => {
+  const settled = bets.filter(b => b.result !== 'pending');
+  const wins = settled.filter(b => b.result === 'win').length;
+  const losses = settled.filter(b => b.result === 'loss').length;
+  const pushes = settled.filter(b => b.result === 'push').length;
+  const totalStaked = settled.reduce((sum, b) => sum + b.stake, 0);
+  const totalProfit = settled.reduce((sum, b) => sum + b.payout, 0);
+  const roi = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
+  const winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
+  const units = totalProfit / (parseFloat(bankroll) * 0.01);
+
+  // NEW: CLV statistics
+  const betsWithCLV = settled.filter(b => b.closingOdds && b.closingOdds !== '');
+  const clvValues = betsWithCLV.map(b => calculateCLV(b.odds, b.closingOdds));
+  const avgCLV = clvValues.length > 0
+    ? clvValues.reduce((sum, c) => sum + c, 0) / clvValues.length
+    : null;
+  const positiveCLV = clvValues.filter(c => c > 0).length;
+  const negativeCLV = clvValues.filter(c => c < 0).length;
+
+  return {
+    wins, losses, pushes, totalStaked, totalProfit, roi, winRate, units,
+    pending: bets.filter(b => b.result === 'pending').length,
+    // NEW CLV stats
+    avgCLV,
+    clvCount: betsWithCLV.length,
+    positiveCLV,
+    negativeCLV,
+    clvWinRate: betsWithCLV.length > 0 ? (positiveCLV / betsWithCLV.length) * 100 : null
+  };
+};
+```
+
+#### Step 4: Add UI input for closing odds (`src/App.jsx:3223-3230`)
+
+Add after the "Odds" input:
+```javascript
+<div>
+  <label className={labelStyle}>Closing</label>
+  <input
+    type="text"
+    value={newBet.closingOdds}
+    onChange={(e) => setNewBet({...newBet, closingOdds: e.target.value})}
+    placeholder="-115"
+    className={inputStyle}
+  />
+</div>
+```
+
+#### Step 5: Add CLV to stats dashboard (`src/App.jsx:3207-3215`)
+
+Add after ROI display:
+```javascript
+{stats.avgCLV !== null && (
+  <div className={`rounded-lg p-3 text-center ${stats.avgCLV >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+    <p className="text-xs text-gray-500">Avg CLV</p>
+    <p className={`font-bold text-lg ${stats.avgCLV >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+      {stats.avgCLV >= 0 ? '+' : ''}{stats.avgCLV.toFixed(2)}%
+    </p>
+  </div>
+)}
+{stats.clvWinRate !== null && (
+  <div className="bg-white rounded-lg p-3 text-center">
+    <p className="text-xs text-gray-500">CLV Win%</p>
+    <p className="font-bold text-lg">{stats.clvWinRate.toFixed(0)}%</p>
+  </div>
+)}
+```
+
+#### Step 6: Add CLV column to bet history table
+
+In the bet history section, add CLV display:
+```javascript
+{bet.closingOdds && (
+  <span className={`text-xs ${calculateCLV(bet.odds, bet.closingOdds) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+    CLV: {calculateCLV(bet.odds, bet.closingOdds) >= 0 ? '+' : ''}
+    {calculateCLV(bet.odds, bet.closingOdds).toFixed(1)}%
+  </span>
+)}
+```
+
+**Files Changed:** 2 (`App.jsx`, `calculations.js`)
+**Lines Changed:** ~50-70
+
+---
+
+## Implementation Priority Summary
+
+| Improvement | Difficulty | Impact | Recommended Order |
+|-------------|------------|--------|-------------------|
+| **CLV Tracking** | ⭐⭐ Low-Medium | High | 1st - Validates model |
+| **Regression for All Sports** | ⭐ Easy | Medium | 2nd - Quick win |
+| **Dynamic K-Factor** | ⭐ Easy | Medium | 3rd - Quick win |
+| **Confidence-Weighted Off/Def** | ⭐ Easy | Low | 4th - Quick win |
+| **Team-Specific Home Advantage** | ⭐⭐ Medium | Medium | 5th |
+| **Sport-Specific MOV** | ⭐⭐ Medium | Low | 6th |
+| **Recency Weighting** | ⭐⭐⭐ Medium-Hard | Medium | 7th |
+| **Non-Normal Distributions** | ⭐⭐⭐⭐ Hard | High | 8th - Research needed |
+
+---
+
 ## Conclusion
 
 Atmospheric Edge is a well-designed sports betting model with:
