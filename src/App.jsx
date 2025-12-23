@@ -70,6 +70,7 @@ const SportsBettingModelPro = () => {
     result: 'pending',
     payout: 0
   });
+  const [editingBet, setEditingBet] = useState(null);  // Track bet being edited
 
   // Add Team State
   const [newTeamName, setNewTeamName] = useState('');
@@ -2120,6 +2121,34 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
 
   const deleteBet = (id) => setBets(prev => prev.filter(b => b.id !== id));
 
+  const startEditBet = (bet) => {
+    setEditingBet({ ...bet, stake: bet.stake.toString() });
+  };
+
+  const saveEditBet = () => {
+    if (!editingBet) return;
+    setBets(prev => prev.map(bet => {
+      if (bet.id !== editingBet.id) return bet;
+      const updatedBet = {
+        ...editingBet,
+        stake: parseFloat(editingBet.stake)
+      };
+      // Recalculate payout if result is set
+      if (updatedBet.result === 'win') {
+        const decimal = americanToDecimal(updatedBet.odds);
+        updatedBet.payout = updatedBet.stake * (decimal - 1);
+      } else if (updatedBet.result === 'loss') {
+        updatedBet.payout = -updatedBet.stake;
+      } else if (updatedBet.result === 'push') {
+        updatedBet.payout = 0;
+      }
+      return updatedBet;
+    }));
+    setEditingBet(null);
+  };
+
+  const cancelEditBet = () => setEditingBet(null);
+
   const calculateStats = () => {
     const settled = bets.filter(b => b.result !== 'pending');
     const wins = settled.filter(b => b.result === 'win').length;
@@ -3279,6 +3308,44 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               <p className="text-xs text-gray-400 mt-2">💡 Enter closing odds after game starts to track CLV (Closing Line Value)</p>
             </div>
 
+            {/* Edit Bet Modal */}
+            {editingBet && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
+                  <h2 className="text-lg font-bold mb-4">✏️ Edit Bet</h2>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><label className={labelStyle}>Date</label><input type="date" value={editingBet.date} onChange={(e) => setEditingBet({...editingBet, date: e.target.value})} className={inputStyle} /></div>
+                      <div><label className={labelStyle}>Sport</label>
+                        <select value={editingBet.sport} onChange={(e) => setEditingBet({...editingBet, sport: e.target.value})} className={inputStyle}>
+                          <option value="nfl">NFL</option><option value="nba">NBA</option><option value="nhl">NHL</option><option value="cfb">CFB</option><option value="cbb">CBB</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div><label className={labelStyle}>Game</label><input type="text" value={editingBet.game} onChange={(e) => setEditingBet({...editingBet, game: e.target.value})} className={inputStyle} /></div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><label className={labelStyle}>Bet Type</label>
+                        <select value={editingBet.betType} onChange={(e) => setEditingBet({...editingBet, betType: e.target.value})} className={inputStyle}>
+                          <option value="ML">Moneyline</option><option value="Spread">Spread</option><option value="Total">Total</option><option value="Prop">Prop</option><option value="Parlay">Parlay</option>
+                        </select>
+                      </div>
+                      <div><label className={labelStyle}>Pick</label><input type="text" value={editingBet.pick} onChange={(e) => setEditingBet({...editingBet, pick: e.target.value})} className={inputStyle} /></div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div><label className={labelStyle}>Odds</label><input type="text" value={editingBet.odds} onChange={(e) => setEditingBet({...editingBet, odds: e.target.value})} placeholder="-110" className={inputStyle} /></div>
+                      <div><label className={labelStyle}>Closing Odds</label><input type="text" value={editingBet.closingOdds || ''} onChange={(e) => setEditingBet({...editingBet, closingOdds: e.target.value})} placeholder="-115" className={inputStyle} /></div>
+                      <div><label className={labelStyle}>Stake ($)</label><input type="number" value={editingBet.stake} onChange={(e) => setEditingBet({...editingBet, stake: e.target.value})} className={inputStyle} /></div>
+                    </div>
+                    <p className="text-xs text-gray-400">💡 Add closing odds after the game starts to track CLV</p>
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={saveEditBet} className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600">Save Changes</button>
+                    <button onClick={cancelEditBet} className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Bet History */}
             <div className={cardStyle}>
               <h2 className="text-lg font-bold mb-3">📋 Bet History</h2>
@@ -3313,7 +3380,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                             </select>
                           </td>
                           <td className={`p-2 font-bold ${bet.payout > 0 ? 'text-emerald-600' : bet.payout < 0 ? 'text-red-600' : ''}`}>{bet.result !== 'pending' ? (bet.payout >= 0 ? '+' : '') + '$' + bet.payout.toFixed(2) : '-'}</td>
-                          <td className="p-2"><button onClick={() => deleteBet(bet.id)} className="text-red-500 hover:text-red-700 text-xs">🗑️</button></td>
+                          <td className="p-2 flex gap-1"><button onClick={() => startEditBet(bet)} className="text-blue-500 hover:text-blue-700 text-xs">✏️</button><button onClick={() => deleteBet(bet.id)} className="text-red-500 hover:text-red-700 text-xs">🗑️</button></td>
                         </tr>
                       )})}
                     </tbody>
