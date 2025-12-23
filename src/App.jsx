@@ -10,7 +10,8 @@ import {
   kellyStakeCapped,
   spreadCoverProb,
   totalProb,
-  getConfidenceTier
+  getConfidenceTier,
+  calculateCLV
 } from './utils/calculations';
 import { runScoreSimulations } from './utils/simulations';
 
@@ -64,6 +65,7 @@ const SportsBettingModelPro = () => {
     betType: 'ML',
     pick: '',
     odds: '',
+    closingOdds: '',  // Closing line odds for CLV tracking
     stake: '',
     result: 'pending',
     payout: 0
@@ -2095,9 +2097,9 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
   // Bet Tracker Functions
   const addBet = () => {
     if (!newBet.game || !newBet.pick || !newBet.odds || !newBet.stake) return;
-    const bet = { ...newBet, id: Date.now(), stake: parseFloat(newBet.stake), odds: newBet.odds };
+    const bet = { ...newBet, id: Date.now(), stake: parseFloat(newBet.stake), odds: newBet.odds, closingOdds: newBet.closingOdds };
     setBets(prev => [...prev, bet]);
-    setNewBet({ date: new Date().toISOString().split('T')[0], sport: sport, game: '', betType: 'ML', pick: '', odds: '', stake: '', result: 'pending', payout: 0 });
+    setNewBet({ date: new Date().toISOString().split('T')[0], sport: sport, game: '', betType: 'ML', pick: '', odds: '', closingOdds: '', stake: '', result: 'pending', payout: 0 });
   };
 
   const updateBetResult = (id, result) => {
@@ -2128,7 +2130,27 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
     const roi = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
     const winRate = (wins + losses) > 0 ? (wins / (wins + losses)) * 100 : 0;
     const units = totalProfit / (parseFloat(bankroll) * 0.01);
-    return { wins, losses, pushes, totalStaked, totalProfit, roi, winRate, units, pending: bets.filter(b => b.result === 'pending').length };
+
+    // CLV (Closing Line Value) statistics
+    const betsWithCLV = settled.filter(b => b.closingOdds && b.closingOdds !== '');
+    const clvValues = betsWithCLV.map(b => calculateCLV(b.odds, b.closingOdds)).filter(c => c !== null);
+    const avgCLV = clvValues.length > 0
+      ? clvValues.reduce((sum, c) => sum + c, 0) / clvValues.length
+      : null;
+    const positiveCLV = clvValues.filter(c => c > 0).length;
+    const negativeCLV = clvValues.filter(c => c < 0).length;
+    const clvWinRate = clvValues.length > 0 ? (positiveCLV / clvValues.length) * 100 : null;
+
+    return {
+      wins, losses, pushes, totalStaked, totalProfit, roi, winRate, units,
+      pending: bets.filter(b => b.result === 'pending').length,
+      // CLV stats
+      avgCLV,
+      clvCount: clvValues.length,
+      positiveCLV,
+      negativeCLV,
+      clvWinRate
+    };
   };
 
   const analyzeMatchup = () => {
@@ -3216,19 +3238,45 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               <div className="bg-blue-50 rounded-lg p-3 text-center"><p className="text-xs text-gray-500">Bankroll</p><p className="font-bold text-lg text-blue-600">${(parseFloat(bankroll) + stats.totalProfit - bets.filter(b => b.result === 'pending').reduce((sum, b) => sum + b.stake, 0)).toFixed(0)}</p></div>
             </div>
 
+            {/* CLV Dashboard - only show if we have CLV data */}
+            {stats.clvCount > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className={`rounded-lg p-3 text-center ${stats.avgCLV >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                  <p className="text-xs text-gray-500">Avg CLV</p>
+                  <p className={`font-bold text-lg ${stats.avgCLV >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {stats.avgCLV >= 0 ? '+' : ''}{stats.avgCLV.toFixed(2)}%
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">CLV Record</p>
+                  <p className="font-bold text-lg">{stats.positiveCLV}-{stats.negativeCLV}</p>
+                </div>
+                <div className="bg-white rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">CLV Win%</p>
+                  <p className="font-bold text-lg">{stats.clvWinRate.toFixed(0)}%</p>
+                </div>
+                <div className="bg-indigo-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">Bets w/ CLV</p>
+                  <p className="font-bold text-lg text-indigo-600">{stats.clvCount}</p>
+                </div>
+              </div>
+            )}
+
             {/* Add New Bet */}
             <div className={cardStyle}>
               <h2 className="text-lg font-bold mb-3">➕ Log New Bet</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9 gap-2">
                 <div><label className={labelStyle}>Date</label><input type="date" value={newBet.date} onChange={(e) => setNewBet({...newBet, date: e.target.value})} className={inputStyle} /></div>
                 <div><label className={labelStyle}>Sport</label><select value={newBet.sport} onChange={(e) => setNewBet({...newBet, sport: e.target.value})} className={inputStyle}>{Object.keys(sportConfig).map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select></div>
                 <div><label className={labelStyle}>Game</label><input type="text" value={newBet.game} onChange={(e) => setNewBet({...newBet, game: e.target.value})} placeholder="NE vs DEN" className={inputStyle} /></div>
                 <div><label className={labelStyle}>Type</label><select value={newBet.betType} onChange={(e) => setNewBet({...newBet, betType: e.target.value})} className={inputStyle}><option>ML</option><option>Spread</option><option>Over</option><option>Under</option></select></div>
                 <div><label className={labelStyle}>Pick</label><input type="text" value={newBet.pick} onChange={(e) => setNewBet({...newBet, pick: e.target.value})} placeholder="Patriots -3" className={inputStyle} /></div>
                 <div><label className={labelStyle}>Odds</label><input type="text" value={newBet.odds} onChange={(e) => setNewBet({...newBet, odds: e.target.value})} placeholder="-110" className={inputStyle} /></div>
+                <div><label className={labelStyle}>Close</label><input type="text" value={newBet.closingOdds} onChange={(e) => setNewBet({...newBet, closingOdds: e.target.value})} placeholder="-115" className={inputStyle} title="Closing line odds (optional, for CLV tracking)" /></div>
                 <div><label className={labelStyle}>Stake ($)</label><input type="number" value={newBet.stake} onChange={(e) => setNewBet({...newBet, stake: e.target.value})} placeholder="25" className={inputStyle} /></div>
                 <div><label className={labelStyle}>&nbsp;</label><button onClick={addBet} className="w-full py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600">Add</button></div>
               </div>
+              <p className="text-xs text-gray-400 mt-2">💡 Enter closing odds after game starts to track CLV (Closing Line Value)</p>
             </div>
 
             {/* Bet History */}
@@ -3237,15 +3285,24 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               {bets.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="border-b text-left text-xs text-gray-500"><th className="p-2">Date</th><th className="p-2">Sport</th><th className="p-2">Game</th><th className="p-2">Pick</th><th className="p-2">Odds</th><th className="p-2">Stake</th><th className="p-2">Result</th><th className="p-2">P/L</th><th className="p-2">Actions</th></tr></thead>
+                    <thead><tr className="border-b text-left text-xs text-gray-500"><th className="p-2">Date</th><th className="p-2">Sport</th><th className="p-2">Game</th><th className="p-2">Pick</th><th className="p-2">Odds</th><th className="p-2">CLV</th><th className="p-2">Stake</th><th className="p-2">Result</th><th className="p-2">P/L</th><th className="p-2">Actions</th></tr></thead>
                     <tbody>
-                      {bets.slice().reverse().map(bet => (
+                      {bets.slice().reverse().map(bet => {
+                        const clv = calculateCLV(bet.odds, bet.closingOdds);
+                        return (
                         <tr key={bet.id} className="border-b hover:bg-gray-50">
                           <td className="p-2">{bet.date}</td>
                           <td className="p-2 uppercase">{bet.sport}</td>
                           <td className="p-2">{bet.game}</td>
                           <td className="p-2 font-medium">{bet.pick}</td>
-                          <td className="p-2">{bet.odds}</td>
+                          <td className="p-2">{bet.odds}{bet.closingOdds && <span className="text-gray-400 text-xs ml-1">→{bet.closingOdds}</span>}</td>
+                          <td className="p-2">
+                            {clv !== null ? (
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${clv >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                {clv >= 0 ? '+' : ''}{clv.toFixed(1)}%
+                              </span>
+                            ) : <span className="text-gray-300">-</span>}
+                          </td>
                           <td className="p-2">${bet.stake}</td>
                           <td className="p-2">
                             <select value={bet.result} onChange={(e) => updateBetResult(bet.id, e.target.value)} className={`text-xs p-1 rounded ${bet.result === 'win' ? 'bg-emerald-100 text-emerald-700' : bet.result === 'loss' ? 'bg-red-100 text-red-700' : bet.result === 'push' ? 'bg-gray-100' : 'bg-yellow-100 text-yellow-700'}`}>
@@ -3258,7 +3315,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                           <td className={`p-2 font-bold ${bet.payout > 0 ? 'text-emerald-600' : bet.payout < 0 ? 'text-red-600' : ''}`}>{bet.result !== 'pending' ? (bet.payout >= 0 ? '+' : '') + '$' + bet.payout.toFixed(2) : '-'}</td>
                           <td className="p-2"><button onClick={() => deleteBet(bet.id)} className="text-red-500 hover:text-red-700 text-xs">🗑️</button></td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>

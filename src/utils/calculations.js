@@ -166,6 +166,23 @@ export const totalProb = (pred, book, isOver, sportConfig) => {
 };
 
 /**
+ * Calculate Closing Line Value (CLV)
+ * Positive CLV = you beat the closing line (the market moved toward your position)
+ * Negative CLV = the market moved against you
+ * @param {string|number} openingOdds - Odds when bet was placed
+ * @param {string|number} closingOdds - Odds at game start
+ * @returns {number|null} CLV in percentage points, or null if closingOdds not provided
+ */
+export const calculateCLV = (openingOdds, closingOdds) => {
+  if (!closingOdds || closingOdds === '') return null;
+  const openProb = americanToImpliedProb(openingOdds);
+  const closeProb = americanToImpliedProb(closingOdds);
+  // CLV in percentage points
+  // Positive = closing line implies higher probability (you got value)
+  return (closeProb - openProb) * 100;
+};
+
+/**
  * Get confidence tier based on expected value
  * @param {number} ev - Expected value as percentage (e.g., 5 for 5%)
  * @returns {{stars: string, label: string, color: string, bg: string}}
