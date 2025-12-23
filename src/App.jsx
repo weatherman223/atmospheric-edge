@@ -3265,7 +3265,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
             {/* Add New Bet */}
             <div className={cardStyle}>
               <h2 className="text-lg font-bold mb-3">➕ Log New Bet</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9 gap-2">
                 <div><label className={labelStyle}>Date</label><input type="date" value={newBet.date} onChange={(e) => setNewBet({...newBet, date: e.target.value})} className={inputStyle} /></div>
                 <div><label className={labelStyle}>Sport</label><select value={newBet.sport} onChange={(e) => setNewBet({...newBet, sport: e.target.value})} className={inputStyle}>{Object.keys(sportConfig).map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}</select></div>
                 <div><label className={labelStyle}>Game</label><input type="text" value={newBet.game} onChange={(e) => setNewBet({...newBet, game: e.target.value})} placeholder="NE vs DEN" className={inputStyle} /></div>
