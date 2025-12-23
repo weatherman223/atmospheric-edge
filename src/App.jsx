@@ -2373,9 +2373,10 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
       });
     }
     
-    // 3. Models disagree on WHO is favored
-    if ((eloMargin > th.closeLine && offDefMargin < -th.closeLine) || 
-        (eloMargin < -th.closeLine && offDefMargin > th.closeLine)) {
+    // 3. Models disagree on WHO is favored (opposite signs = different predicted winners)
+    const oppositeWinners = (eloMargin > 0 && offDefMargin < 0) || (eloMargin < 0 && offDefMargin > 0);
+    // Only need marginDiff > 1 to filter out noise when both are ~0
+    if (oppositeWinners && marginDiff > 1) {
       const eloFav = eloMargin > 0 ? t1Short : t2Short;
       const offDefFav = offDefMargin > 0 ? t1Short : t2Short;
       insights.push({
