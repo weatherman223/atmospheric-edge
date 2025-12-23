@@ -2373,10 +2373,10 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
       });
     }
     
-    // 3. Models disagree on WHO is favored (opposite signs = different predicted winners)
-    const oppositeWinners = (eloMargin > 0 && offDefMargin < 0) || (eloMargin < 0 && offDefMargin > 0);
-    // Only need marginDiff > 1 to filter out noise when both are ~0
-    if (oppositeWinners && marginDiff > 1) {
+    // 3. Models disagree on WHO is favored (opposite signs with meaningful margins)
+    const oppositeWinners = (eloMargin >= 0 && offDefMargin < 0) || (eloMargin <= 0 && offDefMargin > 0);
+    const bothMeaningful = Math.abs(eloMargin) > th.closeLine / 2 && Math.abs(offDefMargin) > th.closeLine / 2;
+    if (oppositeWinners && bothMeaningful) {
       const eloFav = eloMargin > 0 ? t1Short : t2Short;
       const offDefFav = offDefMargin > 0 ? t1Short : t2Short;
       insights.push({
