@@ -99,6 +99,15 @@ const SportsBettingModelPro = () => {
   const [aiModel, setAiModel] = useState('google/gemma-3-12b-it:free');
   const [enableWebSearch, setEnableWebSearch] = useState(false); // $0.02/request for live injury data
 
+  // Automated Injury Data State
+  const [team1Injuries, setTeam1Injuries] = useState([]);
+  const [team2Injuries, setTeam2Injuries] = useState([]);
+  const [team1InjuryAuto, setTeam1InjuryAuto] = useState(0);
+  const [team2InjuryAuto, setTeam2InjuryAuto] = useState(0);
+  const [useAutoInjuries, setUseAutoInjuries] = useState(true);
+  const [injuriesLoading, setInjuriesLoading] = useState(false);
+  const [injuriesError, setInjuriesError] = useState('');
+
   // Sport-specific settings
   // NHL note: OT/SO games handled specially - loser loses only 25% Elo (they get standings point), winner gains 75%
   // College sports: marginCap limits blowout impact (beating cupcakes by 40 shouldn't boost Elo too much)
@@ -120,6 +129,71 @@ const SportsBettingModelPro = () => {
     d3mb: { sport: 'basketball-men', division: 'd3' },
     d3wb: { sport: 'basketball-women', division: 'd3' },
   };
+
+  // ESPN Team ID Mappings for Injury API
+  const espnTeamIds = {
+    nfl: {
+      'Arizona Cardinals': 22, 'Atlanta Falcons': 1, 'Baltimore Ravens': 33, 'Buffalo Bills': 2,
+      'Carolina Panthers': 29, 'Chicago Bears': 3, 'Cincinnati Bengals': 4, 'Cleveland Browns': 5,
+      'Dallas Cowboys': 6, 'Denver Broncos': 7, 'Detroit Lions': 8, 'Green Bay Packers': 9,
+      'Houston Texans': 34, 'Indianapolis Colts': 11, 'Jacksonville Jaguars': 30, 'Kansas City Chiefs': 12,
+      'Las Vegas Raiders': 13, 'Los Angeles Chargers': 24, 'Los Angeles Rams': 14, 'Miami Dolphins': 15,
+      'Minnesota Vikings': 16, 'New England Patriots': 17, 'New Orleans Saints': 18, 'New York Giants': 19,
+      'New York Jets': 20, 'Philadelphia Eagles': 21, 'Pittsburgh Steelers': 23, 'San Francisco 49ers': 25,
+      'Seattle Seahawks': 26, 'Tampa Bay Buccaneers': 27, 'Tennessee Titans': 10, 'Washington Commanders': 28
+    },
+    nba: {
+      'Atlanta Hawks': 1, 'Boston Celtics': 2, 'Brooklyn Nets': 17, 'Charlotte Hornets': 30,
+      'Chicago Bulls': 4, 'Cleveland Cavaliers': 5, 'Dallas Mavericks': 6, 'Denver Nuggets': 7,
+      'Detroit Pistons': 8, 'Golden State Warriors': 9, 'Houston Rockets': 10, 'Indiana Pacers': 11,
+      'LA Clippers': 12, 'Los Angeles Lakers': 13, 'Memphis Grizzlies': 29, 'Miami Heat': 14,
+      'Milwaukee Bucks': 15, 'Minnesota Timberwolves': 16, 'New Orleans Pelicans': 3, 'New York Knicks': 18,
+      'Oklahoma City Thunder': 25, 'Orlando Magic': 19, 'Philadelphia 76ers': 20, 'Phoenix Suns': 21,
+      'Portland Trail Blazers': 22, 'Sacramento Kings': 23, 'San Antonio Spurs': 24, 'Toronto Raptors': 28,
+      'Utah Jazz': 26, 'Washington Wizards': 27
+    },
+    nhl: {
+      'Anaheim Ducks': 25, 'Boston Bruins': 1, 'Buffalo Sabres': 2, 'Calgary Flames': 3,
+      'Carolina Hurricanes': 7, 'Chicago Blackhawks': 4, 'Colorado Avalanche': 17, 'Columbus Blue Jackets': 29,
+      'Dallas Stars': 9, 'Detroit Red Wings': 5, 'Edmonton Oilers': 6, 'Florida Panthers': 26,
+      'Los Angeles Kings': 8, 'Minnesota Wild': 30, 'Montreal Canadiens': 10, 'Nashville Predators': 27,
+      'New Jersey Devils': 11, 'New York Islanders': 12, 'New York Rangers': 13, 'Ottawa Senators': 14,
+      'Philadelphia Flyers': 15, 'Pittsburgh Penguins': 16, 'San Jose Sharks': 18, 'Seattle Kraken': 36,
+      'St. Louis Blues': 19, 'Tampa Bay Lightning': 20, 'Toronto Maple Leafs': 21, 'Utah Hockey Club': 37,
+      'Vancouver Canucks': 22, 'Vegas Golden Knights': 35, 'Washington Capitals': 23, 'Winnipeg Jets': 28
+    }
+  };
+
+  // ESPN Injury API endpoints
+  const injuryEndpoints = {
+    nfl: 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/teams/{teamId}/injuries?limit=100',
+    nba: 'https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/teams/{teamId}/injuries?limit=100',
+    nhl: 'https://sports.core.api.espn.com/v2/sports/hockey/leagues/nhl/teams/{teamId}/injuries?limit=100'
+  };
+
+  // Position importance weights for injury impact calculation
+  const positionWeights = {
+    nfl: {
+      'QB': 1.00, 'RB': 0.45, 'WR': 0.35, 'TE': 0.25, 'OL': 0.20, 'LT': 0.25, 'RT': 0.20,
+      'LG': 0.15, 'RG': 0.15, 'C': 0.18, 'EDGE': 0.40, 'DE': 0.35, 'DT': 0.25, 'LB': 0.30,
+      'CB': 0.40, 'S': 0.30, 'FS': 0.28, 'SS': 0.28, 'K': 0.15, 'P': 0.08, 'default': 0.20
+    },
+    nba: {
+      'PG': 0.85, 'SG': 0.65, 'SF': 0.70, 'PF': 0.60, 'C': 0.55, 'G': 0.75, 'F': 0.65, 'default': 0.50
+    },
+    nhl: {
+      'G': 0.90, 'C': 0.50, 'LW': 0.40, 'RW': 0.40, 'D': 0.45, 'F': 0.45, 'default': 0.35
+    }
+  };
+
+  // Injury status multipliers (how likely they are to miss the game)
+  const statusMultipliers = {
+    'Out': 1.0, 'IR': 1.0, 'Injured Reserve': 1.0, 'Doubtful': 0.85, 'Questionable': 0.50,
+    'Day-To-Day': 0.40, 'Day-to-Day': 0.40, 'Probable': 0.15, 'Expected': 0.0, 'default': 0.5
+  };
+
+  // Base max Elo impact per sport (star player out)
+  const baseMaxImpact = { nfl: -100, nba: -80, nhl: -70, cfb: -90, cbb: -75 };
 
   // Initial team data
   const getInitialTeams = (sportKey) => {
@@ -375,6 +449,182 @@ const SportsBettingModelPro = () => {
       resetContextAdjustments();
     }
   };
+
+  // === INJURY DATA FUNCTIONS ===
+
+  // Injury cache with 30-minute expiration
+  const INJURY_CACHE_KEY = 'injuryCache';
+  const CACHE_DURATION_MS = 30 * 60 * 1000;
+
+  const getInjuryCache = () => {
+    try {
+      const cached = localStorage.getItem(INJURY_CACHE_KEY);
+      return cached ? JSON.parse(cached) : {};
+    } catch { return {}; }
+  };
+
+  const getCachedInjuries = (sp, teamId) => {
+    const cache = getInjuryCache();
+    const entry = cache[`${sp}_${teamId}`];
+    if (!entry || Date.now() - entry.timestamp > CACHE_DURATION_MS) return null;
+    return entry.data;
+  };
+
+  const cacheInjuries = (sp, teamId, injuries) => {
+    const cache = getInjuryCache();
+    cache[`${sp}_${teamId}`] = { data: injuries, timestamp: Date.now() };
+    const entries = Object.entries(cache);
+    if (entries.length > 50) {
+      const sorted = entries.sort((a, b) => b[1].timestamp - a[1].timestamp);
+      localStorage.setItem(INJURY_CACHE_KEY, JSON.stringify(Object.fromEntries(sorted.slice(0, 50))));
+    } else {
+      localStorage.setItem(INJURY_CACHE_KEY, JSON.stringify(cache));
+    }
+  };
+
+  // Fetch injury data for a team from ESPN
+  const fetchTeamInjuries = async (sp, teamId) => {
+    const endpoint = injuryEndpoints[sp];
+    if (!endpoint) return [];
+
+    try {
+      const url = endpoint.replace('{teamId}', teamId);
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+
+      if (!data.items?.length) return [];
+
+      // Fetch each injury detail in parallel
+      const injuries = await Promise.all(
+        data.items.slice(0, 15).map(async (item) => { // Limit to 15 injuries
+          try {
+            const detailRes = await fetch(item.$ref);
+            const detail = await detailRes.json();
+
+            let athleteInfo = {};
+            if (detail.athlete?.$ref) {
+              const athleteRes = await fetch(detail.athlete.$ref);
+              athleteInfo = await athleteRes.json();
+            }
+
+            return {
+              player: athleteInfo.displayName || 'Unknown',
+              position: athleteInfo.position?.abbreviation || 'UNK',
+              status: detail.status || 'Unknown',
+              injury: detail.type?.description || detail.type?.name || 'Undisclosed'
+            };
+          } catch { return null; }
+        })
+      );
+
+      return injuries.filter(Boolean);
+    } catch (error) {
+      console.warn(`Failed to fetch injuries for ${sp} team ${teamId}:`, error);
+      return [];
+    }
+  };
+
+  // Calculate total Elo impact from injuries
+  const calculateInjuryImpact = (injuries, sp) => {
+    const weights = positionWeights[sp] || positionWeights.nfl;
+    const maxImpact = baseMaxImpact[sp] || -100;
+
+    let totalImpact = 0;
+    const breakdown = [];
+
+    for (const injury of injuries) {
+      const posWeight = weights[injury.position] || weights.default;
+      const statusMult = statusMultipliers[injury.status] || statusMultipliers.default;
+      const rawImpact = maxImpact * posWeight * statusMult;
+      const playerImpact = Math.max(rawImpact, maxImpact * 0.6); // Cap individual impact
+
+      totalImpact += playerImpact;
+      breakdown.push({ ...injury, impact: Math.round(playerImpact) });
+    }
+
+    // Diminishing returns for many injuries
+    const diminishingFactor = injuries.length > 3 ? Math.pow(0.9, injuries.length - 3) : 1.0;
+    const cappedImpact = Math.max(Math.round(totalImpact * diminishingFactor), maxImpact * 1.5);
+
+    return {
+      totalImpact: cappedImpact,
+      breakdown: breakdown.sort((a, b) => a.impact - b.impact),
+      keyInjuries: breakdown.filter(b => b.impact <= -20)
+    };
+  };
+
+  // Fetch injuries for current matchup
+  const fetchMatchupInjuries = async () => {
+    if (!team1 || !team2) return;
+
+    const teamIds = espnTeamIds[sport];
+    if (!teamIds) {
+      setInjuriesError('Injury data not available for this sport');
+      return;
+    }
+
+    const t1Id = teamIds[team1];
+    const t2Id = teamIds[team2];
+
+    if (!t1Id || !t2Id) {
+      setInjuriesError('Team not found in ESPN database');
+      return;
+    }
+
+    setInjuriesLoading(true);
+    setInjuriesError('');
+
+    try {
+      // Check cache first
+      let t1Injuries = getCachedInjuries(sport, t1Id);
+      let t2Injuries = getCachedInjuries(sport, t2Id);
+
+      // Fetch if not cached
+      if (!t1Injuries) {
+        t1Injuries = await fetchTeamInjuries(sport, t1Id);
+        cacheInjuries(sport, t1Id, t1Injuries);
+      }
+      if (!t2Injuries) {
+        t2Injuries = await fetchTeamInjuries(sport, t2Id);
+        cacheInjuries(sport, t2Id, t2Injuries);
+      }
+
+      setTeam1Injuries(t1Injuries);
+      setTeam2Injuries(t2Injuries);
+
+      // Calculate impacts
+      const t1Impact = calculateInjuryImpact(t1Injuries, sport);
+      const t2Impact = calculateInjuryImpact(t2Injuries, sport);
+
+      setTeam1InjuryAuto(t1Impact.totalImpact);
+      setTeam2InjuryAuto(t2Impact.totalImpact);
+
+      // Auto-apply if enabled
+      if (useAutoInjuries) {
+        setTeam1Injury(t1Impact.totalImpact);
+        setTeam2Injury(t2Impact.totalImpact);
+      }
+    } catch (error) {
+      setInjuriesError('Failed to fetch injury data');
+      console.error('Injury fetch error:', error);
+    } finally {
+      setInjuriesLoading(false);
+    }
+  };
+
+  // Fetch injuries when matchup changes
+  useEffect(() => {
+    if (team1 && team2 && espnTeamIds[sport]) {
+      fetchMatchupInjuries();
+    } else {
+      setTeam1Injuries([]);
+      setTeam2Injuries([]);
+      setTeam1InjuryAuto(0);
+      setTeam2InjuryAuto(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team1, team2, sport]);
 
   // === CORE FUNCTIONS ===
   // Calculation utilities imported from ./utils/calculations.js
@@ -2828,12 +3078,81 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                 {/* Context Adjustments */}
                 {team1 && team2 && (
                   <div className="border-t pt-3 mt-3">
-                    <p className="text-xs font-bold text-gray-700 mb-2">⚡ Context Adjustments (Elo ±)</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold text-gray-700">⚡ Context Adjustments (Elo ±)</p>
+                      {espnTeamIds[sport] && (
+                        <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={useAutoInjuries}
+                            onChange={(e) => {
+                              setUseAutoInjuries(e.target.checked);
+                              if (e.target.checked) {
+                                setTeam1Injury(team1InjuryAuto);
+                                setTeam2Injury(team2InjuryAuto);
+                              }
+                            }}
+                            className="rounded w-3.5 h-3.5"
+                          />
+                          <span className={useAutoInjuries ? 'text-blue-600 font-medium' : 'text-gray-500'}>Auto Injuries</span>
+                          {injuriesLoading && <span className="text-blue-500 animate-pulse">...</span>}
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Injury Report Panel */}
+                    {espnTeamIds[sport] && (team1Injuries.length > 0 || team2Injuries.length > 0) && (
+                      <div className="mb-3 space-y-2">
+                        {team1Injuries.length > 0 && (
+                          <details className="bg-red-50 border border-red-200 rounded-lg text-xs">
+                            <summary className="px-2 py-1.5 cursor-pointer flex items-center justify-between">
+                              <span className="font-medium text-red-800">{team1.split(' ').pop()} Injuries ({team1Injuries.filter(i => ['Out', 'Doubtful', 'IR'].includes(i.status)).length} key)</span>
+                              <span className="text-red-600 font-mono">{team1InjuryAuto} Elo</span>
+                            </summary>
+                            <div className="px-2 pb-2 space-y-1 max-h-32 overflow-y-auto">
+                              {team1Injuries.map((inj, i) => (
+                                <div key={i} className={`flex justify-between items-center py-0.5 ${inj.status === 'Out' || inj.status === 'IR' ? 'text-red-700' : inj.status === 'Doubtful' ? 'text-orange-700' : 'text-yellow-700'}`}>
+                                  <span>{inj.player} <span className="text-gray-500">({inj.position})</span></span>
+                                  <span className="flex items-center gap-2">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${inj.status === 'Out' || inj.status === 'IR' ? 'bg-red-200' : inj.status === 'Doubtful' ? 'bg-orange-200' : 'bg-yellow-200'}`}>{inj.status}</span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                        {team2Injuries.length > 0 && (
+                          <details className="bg-red-50 border border-red-200 rounded-lg text-xs">
+                            <summary className="px-2 py-1.5 cursor-pointer flex items-center justify-between">
+                              <span className="font-medium text-red-800">{team2.split(' ').pop()} Injuries ({team2Injuries.filter(i => ['Out', 'Doubtful', 'IR'].includes(i.status)).length} key)</span>
+                              <span className="text-red-600 font-mono">{team2InjuryAuto} Elo</span>
+                            </summary>
+                            <div className="px-2 pb-2 space-y-1 max-h-32 overflow-y-auto">
+                              {team2Injuries.map((inj, i) => (
+                                <div key={i} className={`flex justify-between items-center py-0.5 ${inj.status === 'Out' || inj.status === 'IR' ? 'text-red-700' : inj.status === 'Doubtful' ? 'text-orange-700' : 'text-yellow-700'}`}>
+                                  <span>{inj.player} <span className="text-gray-500">({inj.position})</span></span>
+                                  <span className="flex items-center gap-2">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${inj.status === 'Out' || inj.status === 'IR' ? 'bg-red-200' : inj.status === 'Doubtful' ? 'bg-orange-200' : 'bg-yellow-200'}`}>{inj.status}</span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )}
+
+                    {injuriesError && <p className="text-xs text-orange-600 mb-2">{injuriesError}</p>}
+
                     <div className="grid grid-cols-2 gap-3 text-xs">
                       <div>
                         <p className="font-medium text-gray-600 mb-1">{team1.split(' ').pop()}</p>
                         <div className="space-y-1">
-                          <div className="flex items-center gap-1"><span className="w-14">Injury:</span><input type="range" min="-100" max="0" value={team1Injury} onChange={(e) => setTeam1Injury(parseInt(e.target.value))} className={sliderStyle} /><span className="w-8 text-right text-red-500">{team1Injury}</span></div>
+                          <div className="flex items-center gap-1">
+                            <span className="w-14">Injury:</span>
+                            <input type="range" min="-100" max="0" value={team1Injury} onChange={(e) => { setTeam1Injury(parseInt(e.target.value)); if (useAutoInjuries) setUseAutoInjuries(false); }} className={`${sliderStyle} ${useAutoInjuries ? 'opacity-50' : ''}`} />
+                            <span className="w-8 text-right text-red-500">{team1Injury}</span>
+                          </div>
                           <div className="flex items-center gap-1"><span className="w-14">Rest:</span><input type="range" min="-30" max="30" value={team1Rest} onChange={(e) => setTeam1Rest(parseInt(e.target.value))} className={sliderStyle} /><span className="w-8 text-right">{team1Rest > 0 ? '+' : ''}{team1Rest}</span></div>
                           <div className="flex items-center gap-1"><span className="w-14">Motiv:</span><input type="range" min="-40" max="40" value={team1Motivation} onChange={(e) => setTeam1Motivation(parseInt(e.target.value))} className={sliderStyle} /><span className="w-8 text-right">{team1Motivation > 0 ? '+' : ''}{team1Motivation}</span></div>
                         </div>
@@ -2841,13 +3160,17 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       <div>
                         <p className="font-medium text-gray-600 mb-1">{team2.split(' ').pop()}</p>
                         <div className="space-y-1">
-                          <div className="flex items-center gap-1"><span className="w-14">Injury:</span><input type="range" min="-100" max="0" value={team2Injury} onChange={(e) => setTeam2Injury(parseInt(e.target.value))} className={sliderStyle} /><span className="w-8 text-right text-red-500">{team2Injury}</span></div>
+                          <div className="flex items-center gap-1">
+                            <span className="w-14">Injury:</span>
+                            <input type="range" min="-100" max="0" value={team2Injury} onChange={(e) => { setTeam2Injury(parseInt(e.target.value)); if (useAutoInjuries) setUseAutoInjuries(false); }} className={`${sliderStyle} ${useAutoInjuries ? 'opacity-50' : ''}`} />
+                            <span className="w-8 text-right text-red-500">{team2Injury}</span>
+                          </div>
                           <div className="flex items-center gap-1"><span className="w-14">Rest:</span><input type="range" min="-30" max="30" value={team2Rest} onChange={(e) => setTeam2Rest(parseInt(e.target.value))} className={sliderStyle} /><span className="w-8 text-right">{team2Rest > 0 ? '+' : ''}{team2Rest}</span></div>
                           <div className="flex items-center gap-1"><span className="w-14">Motiv:</span><input type="range" min="-40" max="40" value={team2Motivation} onChange={(e) => setTeam2Motivation(parseInt(e.target.value))} className={sliderStyle} /><span className="w-8 text-right">{team2Motivation > 0 ? '+' : ''}{team2Motivation}</span></div>
                         </div>
                       </div>
                     </div>
-                    <p className="text-xs text-gray-400 mt-2">Injury: -30 minor, -60 key player, -100 star out</p>
+                    <p className="text-xs text-gray-400 mt-2">{useAutoInjuries && espnTeamIds[sport] ? 'Auto: Injury impact from ESPN data (uncheck to override)' : 'Injury: -30 minor, -60 key player, -100 star out'}</p>
                   </div>
                 )}
                 
