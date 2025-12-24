@@ -1612,7 +1612,7 @@ const SportsBettingModelPro = () => {
   };
 
   // Fetch Today's Games from NCAA API for D3 sports
-  const fetchNCAATodaysGames = async () => {
+  const fetchNCAATodaysGames = async (dateOverride = gamePickerDate) => {
     setTodaysGamesLoading(true);
     setTodaysGames([]);
 
@@ -1623,12 +1623,11 @@ const SportsBettingModelPro = () => {
         return;
       }
 
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
+      const [year, month, day] = dateOverride.split('-').map(Number);
+      const monthStr = String(month).padStart(2, '0');
+      const dayStr = String(day).padStart(2, '0');
 
-      const url = `${ncaaApiBase}/scoreboard/${ncaaConfig.sport}/${ncaaConfig.division}/${year}/${month}/${day}/all-conf`;
+      const url = `${ncaaApiBase}/scoreboard/${ncaaConfig.sport}/${ncaaConfig.division}/${year}/${monthStr}/${dayStr}/all-conf`;
 
       const response = await fetch(url);
       if (!response.ok) {
@@ -2243,17 +2242,17 @@ const SportsBettingModelPro = () => {
     }
   };
   
-  const fetchTodaysGames = async () => {
+  const fetchTodaysGames = async (dateOverride = gamePickerDate) => {
     // Route D3 sports to NCAA API
     if (sportConfig[sport]?.useNcaaApi) {
-      return fetchNCAATodaysGames();
+      return fetchNCAATodaysGames(dateOverride);
     }
 
     setTodaysGamesLoading(true);
     setTodaysGames([]);
 
     try {
-      const dateStr = gamePickerDate.replace(/-/g, '');
+      const dateStr = dateOverride.replace(/-/g, '');
       let extraParams = '';
       if (sport === 'cbb') extraParams = '&groups=50&limit=500';
       if (sport === 'cfb') extraParams = '&groups=80&limit=500';
@@ -3096,7 +3095,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               <div className="flex justify-between items-center mb-3">
                 <h2 className="text-lg font-bold">📋 Game Setup</h2>
                 <button 
-                  onClick={() => { setShowGamePicker(true); fetchTodaysGames(); }}
+                  onClick={() => { setShowGamePicker(true); fetchTodaysGames(gamePickerDate); }}
                   className="px-3 py-1 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 flex items-center gap-1"
                 >
                   📅 Today's Games
@@ -3119,7 +3118,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                           const date = new Date(y, m - 1, d - 1); // month is 0-indexed
                           const newDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                           setGamePickerDate(newDate);
-                          setTimeout(fetchTodaysGames, 0);
+                          fetchTodaysGames(newDate);
                         }}
                         className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium"
                       >
@@ -3129,8 +3128,9 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                         type="date"
                         value={gamePickerDate}
                         onChange={(e) => {
-                          setGamePickerDate(e.target.value);
-                          setTimeout(fetchTodaysGames, 0);
+                          const newDate = e.target.value;
+                          setGamePickerDate(newDate);
+                          fetchTodaysGames(newDate);
                         }}
                         className="px-3 py-1 border rounded text-sm"
                       />
@@ -3141,7 +3141,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                           const date = new Date(y, m - 1, d + 1); // month is 0-indexed
                           const newDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                           setGamePickerDate(newDate);
-                          setTimeout(fetchTodaysGames, 0);
+                          fetchTodaysGames(newDate);
                         }}
                         className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium"
                       >
@@ -3152,7 +3152,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                           const now = new Date();
                           const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                           setGamePickerDate(today);
-                          setTimeout(fetchTodaysGames, 0);
+                          fetchTodaysGames(today);
                         }}
                         className="px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded text-xs font-medium"
                       >
