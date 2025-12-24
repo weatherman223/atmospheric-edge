@@ -558,8 +558,10 @@ const SportsBettingModelPro = () => {
 
     // Get status multiplier with case-insensitive matching
     const getStatusMult = (status) => {
+      // Numeric codes (12=LTIR, etc) are IR statuses - definitely out
+      if (!isNaN(status) && status !== '') return 1.0;
       const s = (status || '').toLowerCase();
-      if (s.includes('out') || s === 'ir' || s.includes('injured reserve')) return 1.0;
+      if (s.includes('out') || s === 'ir' || s.includes('injured') || s.includes('ltir')) return 1.0;
       if (s.includes('doubtful')) return 0.75;
       if (s.includes('questionable')) return 0.20;
       if (s.includes('day')) return 0.15; // Day-to-Day
@@ -606,9 +608,10 @@ const SportsBettingModelPro = () => {
     // Cap at 1.2x max impact (e.g., -120 for NFL)
     const cappedImpact = Math.max(Math.round(totalImpact), Math.round(maxImpact * 1.2));
 
-    // Key injuries = Out/IR/Doubtful with real impact (not Questionable bench players)
+    // Key injuries = Out/IR/LTIR/Doubtful with real impact (not Questionable bench players)
     // Use case-insensitive matching since ESPN status strings vary
     const isKeyStatus = (status) => {
+      if (!isNaN(status) && status !== '') return true; // Numeric codes (12=LTIR) are key
       const s = (status || '').toLowerCase();
       return s.includes('out') || s.includes('ir') || s.includes('injured') || s.includes('doubtful');
     };
@@ -3212,46 +3215,73 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                     </div>
 
                     {/* Injury Report Panel */}
-                    {espnTeamIds[sport] && (team1Injuries.length > 0 || team2Injuries.length > 0) && (
+                    {espnTeamIds[sport] && (team1Injuries.length > 0 || team2Injuries.length > 0) && (() => {
+                      // Helper to check if status means player is OUT (red)
+                      const isOutStatus = (s) => {
+                        if (!s) return false;
+                        if (!isNaN(s)) return true; // Numeric codes (12=LTIR, etc) are IR statuses
+                        const status = s.toLowerCase();
+                        return status.includes('out') || status.includes('ir') || status.includes('injured') || status.includes('ltir');
+                      };
+                      // Helper to check if status is doubtful (orange)
+                      const isDoubtfulStatus = (s) => (s || '').toLowerCase().includes('doubtful');
+                      // Helper to display status nicely (handle numeric codes)
+                      const displayStatus = (s) => {
+                        if (!s) return 'Unknown';
+                        if (s === '12' || s === 12) return 'LTIR'; // Long-Term IR
+                        if (!isNaN(s)) return 'IR'; // Other numeric codes are likely IR variants
+                        return s;
+                      };
+                      // Get status color classes
+                      const getStatusClasses = (s) => {
+                        if (isOutStatus(s)) return { text: 'text-red-700', bg: 'bg-red-200' };
+                        if (isDoubtfulStatus(s)) return { text: 'text-orange-700', bg: 'bg-orange-200' };
+                        return { text: 'text-yellow-700', bg: 'bg-yellow-200' };
+                      };
+                      return (
                       <div className="mb-3 space-y-2">
                         {team1Injuries.length > 0 && (
                           <details className="bg-red-50 border border-red-200 rounded-lg text-xs">
                             <summary className="px-2 py-1.5 cursor-pointer flex items-center justify-between">
-                              <span className="font-medium text-red-800">{team1.split(' ').pop()} Injuries ({team1Injuries.filter(i => ['Out', 'Doubtful', 'IR'].includes(i.status)).length} key)</span>
+                              <span className="font-medium text-red-800">{team1.split(' ').pop()} Injuries ({team1Injuries.filter(i => isOutStatus(i.status) || isDoubtfulStatus(i.status)).length} key)</span>
                               <span className="text-red-600 font-mono">{team1InjuryAuto} Elo</span>
                             </summary>
                             <div className="px-2 pb-2 space-y-1 max-h-32 overflow-y-auto">
-                              {team1Injuries.map((inj, i) => (
-                                <div key={i} className={`flex justify-between items-center py-0.5 ${inj.status === 'Out' || inj.status === 'IR' ? 'text-red-700' : inj.status === 'Doubtful' ? 'text-orange-700' : 'text-yellow-700'}`}>
+                              {team1Injuries.map((inj, i) => {
+                                const colors = getStatusClasses(inj.status);
+                                return (
+                                <div key={i} className={`flex justify-between items-center py-0.5 ${colors.text}`}>
                                   <span>{inj.player} <span className="text-gray-500">({inj.position})</span></span>
                                   <span className="flex items-center gap-2">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${inj.status === 'Out' || inj.status === 'IR' ? 'bg-red-200' : inj.status === 'Doubtful' ? 'bg-orange-200' : 'bg-yellow-200'}`}>{inj.status}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${colors.bg}`}>{displayStatus(inj.status)}</span>
                                   </span>
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           </details>
                         )}
                         {team2Injuries.length > 0 && (
                           <details className="bg-red-50 border border-red-200 rounded-lg text-xs">
                             <summary className="px-2 py-1.5 cursor-pointer flex items-center justify-between">
-                              <span className="font-medium text-red-800">{team2.split(' ').pop()} Injuries ({team2Injuries.filter(i => ['Out', 'Doubtful', 'IR'].includes(i.status)).length} key)</span>
+                              <span className="font-medium text-red-800">{team2.split(' ').pop()} Injuries ({team2Injuries.filter(i => isOutStatus(i.status) || isDoubtfulStatus(i.status)).length} key)</span>
                               <span className="text-red-600 font-mono">{team2InjuryAuto} Elo</span>
                             </summary>
                             <div className="px-2 pb-2 space-y-1 max-h-32 overflow-y-auto">
-                              {team2Injuries.map((inj, i) => (
-                                <div key={i} className={`flex justify-between items-center py-0.5 ${inj.status === 'Out' || inj.status === 'IR' ? 'text-red-700' : inj.status === 'Doubtful' ? 'text-orange-700' : 'text-yellow-700'}`}>
+                              {team2Injuries.map((inj, i) => {
+                                const colors = getStatusClasses(inj.status);
+                                return (
+                                <div key={i} className={`flex justify-between items-center py-0.5 ${colors.text}`}>
                                   <span>{inj.player} <span className="text-gray-500">({inj.position})</span></span>
                                   <span className="flex items-center gap-2">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${inj.status === 'Out' || inj.status === 'IR' ? 'bg-red-200' : inj.status === 'Doubtful' ? 'bg-orange-200' : 'bg-yellow-200'}`}>{inj.status}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${colors.bg}`}>{displayStatus(inj.status)}</span>
                                   </span>
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           </details>
                         )}
                       </div>
-                    )}
+                    );})()}
 
                     {injuriesError && <p className="text-xs text-orange-600 mb-2">{injuriesError}</p>}
 
