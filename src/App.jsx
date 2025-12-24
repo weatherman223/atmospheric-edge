@@ -90,6 +90,7 @@ const SportsBettingModelPro = () => {
   const [todaysGames, setTodaysGames] = useState([]);
   const [todaysGamesLoading, setTodaysGamesLoading] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
+  const [gamePickerDate, setGamePickerDate] = useState(new Date().toISOString().split('T')[0]);
 
   // AI Insights State
   const [aiInsights, setAiInsights] = useState(null);
@@ -2146,11 +2147,11 @@ const SportsBettingModelPro = () => {
     setTodaysGames([]);
 
     try {
-      const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+      const dateStr = gamePickerDate.replace(/-/g, '');
       let extraParams = '';
       if (sport === 'cbb') extraParams = '&groups=50&limit=500';
       if (sport === 'cfb') extraParams = '&groups=80&limit=500';
-      const url = `${espnEndpoints[sport]}?dates=${today}${extraParams}`;
+      const url = `${espnEndpoints[sport]}?dates=${dateStr}${extraParams}`;
       
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch games');
@@ -3001,10 +3002,54 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                   <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
                     <div className="p-4 border-b bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex justify-between items-center">
-                      <h3 className="font-bold text-lg">📅 Today's {sportConfig[sport].name} Games</h3>
+                      <h3 className="font-bold text-lg">📅 {sportConfig[sport].name} Games</h3>
                       <button onClick={() => setShowGamePicker(false)} className="text-white hover:text-gray-200 text-xl">✕</button>
                     </div>
-                    <div className="p-4 overflow-y-auto max-h-[60vh]">
+                    <div className="p-3 border-b bg-gray-50 flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => {
+                          const d = new Date(gamePickerDate);
+                          d.setDate(d.getDate() - 1);
+                          const newDate = d.toISOString().split('T')[0];
+                          setGamePickerDate(newDate);
+                          setTimeout(fetchTodaysGames, 0);
+                        }}
+                        className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium"
+                      >
+                        ◀
+                      </button>
+                      <input
+                        type="date"
+                        value={gamePickerDate}
+                        onChange={(e) => {
+                          setGamePickerDate(e.target.value);
+                          setTimeout(fetchTodaysGames, 0);
+                        }}
+                        className="px-3 py-1 border rounded text-sm"
+                      />
+                      <button
+                        onClick={() => {
+                          const d = new Date(gamePickerDate);
+                          d.setDate(d.getDate() + 1);
+                          const newDate = d.toISOString().split('T')[0];
+                          setGamePickerDate(newDate);
+                          setTimeout(fetchTodaysGames, 0);
+                        }}
+                        className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium"
+                      >
+                        ▶
+                      </button>
+                      <button
+                        onClick={() => {
+                          setGamePickerDate(new Date().toISOString().split('T')[0]);
+                          setTimeout(fetchTodaysGames, 0);
+                        }}
+                        className="px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded text-xs font-medium"
+                      >
+                        Today
+                      </button>
+                    </div>
+                    <div className="p-4 overflow-y-auto max-h-[55vh]">
                       {todaysGamesLoading ? (
                         <div className="text-center py-8 text-gray-500">
                           <div className="animate-spin inline-block w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full mb-2"></div>
@@ -3013,7 +3058,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       ) : todaysGames.length === 0 ? (
                         <div className="text-center py-8 text-gray-500">
                           <p className="text-4xl mb-2">🏟️</p>
-                          <p>No games scheduled for today</p>
+                          <p>No games scheduled for {gamePickerDate === new Date().toISOString().split('T')[0] ? 'today' : gamePickerDate}</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
