@@ -188,9 +188,10 @@ const SportsBettingModelPro = () => {
   };
 
   // Injury status multipliers (how likely they are to miss the game)
+  // Questionable players play ~75% of the time, Day-to-Day even more
   const statusMultipliers = {
-    'Out': 1.0, 'IR': 1.0, 'Injured Reserve': 1.0, 'Doubtful': 0.85, 'Questionable': 0.50,
-    'Day-To-Day': 0.40, 'Day-to-Day': 0.40, 'Probable': 0.15, 'Expected': 0.0, 'default': 0.5
+    'Out': 1.0, 'IR': 1.0, 'Injured Reserve': 1.0, 'Doubtful': 0.75, 'Questionable': 0.20,
+    'Day-To-Day': 0.15, 'Day-to-Day': 0.15, 'Probable': 0.05, 'Expected': 0.0, 'default': 0.1
   };
 
   // Base max Elo impact per sport (star player out)
@@ -527,31 +528,45 @@ const SportsBettingModelPro = () => {
   };
 
   // Calculate total Elo impact from injuries
+  // Only counts players who are actually OUT/IR/Doubtful significantly
+  // Questionable/Day-to-Day players usually play and get minimal weight
   const calculateInjuryImpact = (injuries, sp) => {
     const weights = positionWeights[sp] || positionWeights.nfl;
     const maxImpact = baseMaxImpact[sp] || -100;
 
-    let totalImpact = 0;
     const breakdown = [];
 
     for (const injury of injuries) {
       const posWeight = weights[injury.position] || weights.default;
       const statusMult = statusMultipliers[injury.status] || statusMultipliers.default;
       const rawImpact = maxImpact * posWeight * statusMult;
-      const playerImpact = Math.max(rawImpact, maxImpact * 0.6); // Cap individual impact
-
-      totalImpact += playerImpact;
-      breakdown.push({ ...injury, impact: Math.round(playerImpact) });
+      breakdown.push({ ...injury, impact: Math.round(rawImpact) });
     }
 
-    // Diminishing returns for many injuries
-    const diminishingFactor = injuries.length > 3 ? Math.pow(0.9, injuries.length - 3) : 1.0;
-    const cappedImpact = Math.max(Math.round(totalImpact * diminishingFactor), maxImpact * 1.5);
+    // Sort by impact (most negative first) and only count top contributors
+    breakdown.sort((a, b) => a.impact - b.impact);
+
+    // Only sum the top 4 most impactful injuries with diminishing returns
+    // 1st injury: 100%, 2nd: 60%, 3rd: 35%, 4th: 20%
+    const diminishingWeights = [1.0, 0.6, 0.35, 0.2];
+    let totalImpact = 0;
+    for (let i = 0; i < Math.min(breakdown.length, 4); i++) {
+      totalImpact += breakdown[i].impact * diminishingWeights[i];
+    }
+
+    // Cap at 1.2x max impact (e.g., -120 for NFL)
+    const cappedImpact = Math.max(Math.round(totalImpact), Math.round(maxImpact * 1.2));
+
+    // Key injuries = Out/IR/Doubtful with real impact (not Questionable bench players)
+    const keyStatuses = ['Out', 'IR', 'Injured Reserve', 'Doubtful'];
+    const keyInjuries = breakdown.filter(b =>
+      keyStatuses.includes(b.status) && b.impact <= -15
+    );
 
     return {
       totalImpact: cappedImpact,
-      breakdown: breakdown.sort((a, b) => a.impact - b.impact),
-      keyInjuries: breakdown.filter(b => b.impact <= -20)
+      breakdown,
+      keyInjuries
     };
   };
 
