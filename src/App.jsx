@@ -505,16 +505,35 @@ const SportsBettingModelPro = () => {
             const detail = await detailRes.json();
 
             let athleteInfo = {};
+            let gamesPlayed = 0;
             if (detail.athlete?.$ref) {
               const athleteRes = await fetch(detail.athlete.$ref);
               athleteInfo = await athleteRes.json();
+
+              // Try to get games played from athlete statistics
+              if (athleteInfo.statistics?.$ref) {
+                try {
+                  const statsRes = await fetch(athleteInfo.statistics.$ref);
+                  const statsData = await statsRes.json();
+                  // Look for games played in stats (varies by sport)
+                  const gpStat = statsData.splits?.categories?.[0]?.stats?.find(
+                    s => s.name === 'gamesPlayed' || s.name === 'GP' || s.name === 'games'
+                  );
+                  gamesPlayed = gpStat?.value || 0;
+                } catch { /* stats fetch failed, use 0 */ }
+              }
+              // Fallback: check if experience indicates they've played
+              if (gamesPlayed === 0 && athleteInfo.experience?.years > 0) {
+                gamesPlayed = 10; // Assume veterans have played
+              }
             }
 
             return {
               player: athleteInfo.displayName || 'Unknown',
               position: athleteInfo.position?.abbreviation || 'UNK',
               status: detail.status || 'Unknown',
-              injury: detail.type?.description || detail.type?.name || 'Undisclosed'
+              injury: detail.type?.description || detail.type?.name || 'Undisclosed',
+              gamesPlayed
             };
           } catch { return null; }
         })
@@ -547,10 +566,19 @@ const SportsBettingModelPro = () => {
       return 0.1; // default for unknown
     };
 
+    // Get games played multiplier - players who haven't played don't matter
+    const getGamesMult = (gamesPlayed) => {
+      if (gamesPlayed === 0) return 0; // Hasn't played = no impact
+      if (gamesPlayed < 5) return 0.3; // Barely played
+      if (gamesPlayed < 15) return 0.7; // Limited role
+      return 1.0; // Regular contributor
+    };
+
     for (const injury of injuries) {
       const posWeight = weights[injury.position] || weights.default;
       const statusMult = getStatusMult(injury.status);
-      const rawImpact = maxImpact * posWeight * statusMult;
+      const gamesMult = getGamesMult(injury.gamesPlayed || 0);
+      const rawImpact = maxImpact * posWeight * statusMult * gamesMult;
       breakdown.push({ ...injury, impact: Math.round(rawImpact) });
     }
 
