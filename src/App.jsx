@@ -511,20 +511,47 @@ const SportsBettingModelPro = () => {
               athleteInfo = await athleteRes.json();
 
               // Try to get games played from athlete statistics
+              let statsFound = false;
               if (athleteInfo.statistics?.$ref) {
                 try {
                   const statsRes = await fetch(athleteInfo.statistics.$ref);
                   const statsData = await statsRes.json();
-                  // Look for games played in stats (varies by sport)
-                  const gpStat = statsData.splits?.categories?.[0]?.stats?.find(
-                    s => s.name === 'gamesPlayed' || s.name === 'GP' || s.name === 'games'
-                  );
-                  gamesPlayed = gpStat?.value || 0;
-                } catch { /* stats fetch failed, use 0 */ }
+                  // Search for games played in various possible locations
+                  const findGP = (obj) => {
+                    if (!obj) return null;
+                    // Direct stats array
+                    if (Array.isArray(obj.stats)) {
+                      const gp = obj.stats.find(s =>
+                        s.name?.toLowerCase().includes('gamesplayed') ||
+                        s.name === 'GP' ||
+                        s.abbreviation === 'GP'
+                      );
+                      if (gp?.value) return gp.value;
+                    }
+                    // Nested in splits/categories
+                    if (obj.splits?.categories) {
+                      for (const cat of obj.splits.categories) {
+                        const gp = cat.stats?.find(s =>
+                          s.name?.toLowerCase().includes('gamesplayed') ||
+                          s.name === 'GP' ||
+                          s.abbreviation === 'GP'
+                        );
+                        if (gp?.value) return gp.value;
+                      }
+                    }
+                    return null;
+                  };
+                  const gpValue = findGP(statsData);
+                  if (gpValue !== null) {
+                    gamesPlayed = gpValue;
+                    statsFound = true;
+                  }
+                } catch { /* stats fetch failed */ }
               }
-              // Fallback: check if experience indicates they've played
-              if (gamesPlayed === 0 && athleteInfo.experience?.years > 0) {
-                gamesPlayed = 10; // Assume veterans have played
+              // Only use experience fallback if we couldn't fetch stats
+              // If stats say 0 games, trust that (like Dejounte Murray)
+              if (!statsFound && athleteInfo.experience?.years > 0) {
+                gamesPlayed = 20; // Assume veterans have played if we couldn't get stats
               }
             }
 
@@ -540,7 +567,12 @@ const SportsBettingModelPro = () => {
         })
       );
 
-      return injuries.filter(Boolean);
+      // Filter out "Active" players - they're healthy and shouldn't be in injury list
+      return injuries.filter(inj => {
+        if (!inj) return false;
+        const status = (inj.status || '').toLowerCase();
+        return !status.includes('active') && status !== 'healthy';
+      });
     } catch (error) {
       console.warn(`Failed to fetch injuries for ${sp} team ${teamId}:`, error);
       return [];
@@ -561,6 +593,8 @@ const SportsBettingModelPro = () => {
       // Numeric codes (12=LTIR, etc) are IR statuses - definitely out
       if (!isNaN(status) && status !== '') return 1.0;
       const s = (status || '').toLowerCase();
+      // Active/Healthy = no impact (shouldn't be in list but safety net)
+      if (s.includes('active') || s === 'healthy') return 0;
       if (s.includes('out') || s === 'ir' || s.includes('injured') || s.includes('ltir')) return 1.0;
       if (s.includes('doubtful')) return 0.75;
       if (s.includes('questionable')) return 0.20;
