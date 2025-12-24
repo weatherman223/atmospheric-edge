@@ -392,6 +392,26 @@ const SportsBettingModelPro = () => {
     return Math.round(val); // No regression for NFL/NHL/CFB
   };
 
+  // Count games played from the game log for a specific team
+  // Used for dynamic K-factor and confidence-weighted updates
+  const getGamesPlayedFromLog = (teamName, log) => {
+    return log.filter(g => g.team1 === teamName || g.team2 === teamName).length;
+  };
+
+  // Dynamic K-factor: starts at 1.5x base, decays to 0.6x base over ~50 games
+  // New teams or early season: higher K for faster calibration
+  // Established teams: lower K for more stable ratings
+  const getDynamicK = (baseK, gamesPlayed) => {
+    return baseK * Math.max(0.6, 1.5 - (gamesPlayed / 50));
+  };
+
+  // Confidence-weighted off/def scale: decreases as we have more data
+  // Early games: 0.3 scale (aggressive updates to calibrate)
+  // More games: scale decreases (more confident in current ratings)
+  const getConfidenceScale = (gamesPlayed) => {
+    return 0.3 / Math.sqrt(gamesPlayed / 5 + 1);
+  };
+
   const predictSpread = (t1Elo, t2Elo, ha) => -((t1Elo + ha - t2Elo) * sportConfig[sport].spreadMultiplier);
   const predictTotal = (t1, t2) => {
     const c = sportConfig[sport];
@@ -404,20 +424,26 @@ const SportsBettingModelPro = () => {
 
   const updateRatings = () => {
     if (!resultTeam1 || !resultTeam2 || score1 === '' || score2 === '') return;
-    const c = sportConfig[sport]; 
-    const s1 = parseInt(score1); 
+    const c = sportConfig[sport];
+    const s1 = parseInt(score1);
     const s2 = parseInt(score2);
     const t1 = teams[resultTeam1];
     const t2 = teams[resultTeam2];
-    
-    // Elo change based on win/loss
-    const winner = s1 > s2 ? resultTeam1 : resultTeam2; 
+
+    // Get games played for dynamic K and confidence-weighted updates
+    const t1Games = getGamesPlayedFromLog(resultTeam1, gameLog);
+    const t2Games = getGamesPlayedFromLog(resultTeam2, gameLog);
+    const avgGamesPlayed = (t1Games + t2Games) / 2;
+
+    // Elo change based on win/loss with dynamic K-factor
+    const winner = s1 > s2 ? resultTeam1 : resultTeam2;
     const loser = s1 > s2 ? resultTeam2 : resultTeam1;
     const rawMov = Math.abs(s1-s2);
     const mov = c.marginCap ? Math.min(rawMov, c.marginCap) : rawMov; // Cap blowouts for college sports
     const exp = eloToWinProb(teams[winner].elo, teams[loser].elo);
-    const baseEloChange = Math.round(c.kFactor * Math.min(Math.log(mov * (c.marginMult || 1) + 1)*0.8+1, 2.5) * (1-exp));
-    
+    const dynamicK = getDynamicK(c.kFactor, avgGamesPlayed);
+    const baseEloChange = Math.round(dynamicK * Math.min(Math.log(mov * (c.marginMult || 1) + 1)*0.8+1, 2.5) * (1-exp));
+
     // NHL OT/SO adjustment: winner gets 75%, loser loses only 25% (they got a point)
     let winnerEloChange = baseEloChange;
     let loserEloChange = baseEloChange;
@@ -425,18 +451,20 @@ const SportsBettingModelPro = () => {
       winnerEloChange = Math.round(baseEloChange * 0.75);
       loserEloChange = Math.round(baseEloChange * 0.25);
     }
-    
+
     // Expected scores based on current ratings
     const ri = c.ratingImpact || 1.0;
     const exp1 = c.avgScore * (1 + ((t1.off - 100) - (t2.def - 100)) * ri / 100);
     const exp2 = c.avgScore * (1 + ((t2.off - 100) - (t1.def - 100)) * ri / 100);
-    
-    // Offense/Defense adjustments based on actual vs expected
-    const offScale = 0.3; // How much to adjust off/def ratings
-    const t1OffDiff = Math.round((s1 - exp1) * offScale);
-    const t2OffDiff = Math.round((s2 - exp2) * offScale);
-    const t1DefDiff = Math.round((exp2 - s2) * offScale); // Good defense = opponent scores LESS than expected → def goes UP
-    const t2DefDiff = Math.round((exp1 - s1) * offScale);
+
+    // Confidence-weighted offense/defense adjustments
+    // Scale decreases as we have more data (more confident in current ratings)
+    const offScale1 = getConfidenceScale(t1Games);
+    const offScale2 = getConfidenceScale(t2Games);
+    const t1OffDiff = Math.round((s1 - exp1) * offScale1);
+    const t2OffDiff = Math.round((s2 - exp2) * offScale2);
+    const t1DefDiff = Math.round((exp2 - s2) * offScale1); // Good defense = opponent scores LESS than expected → def goes UP
+    const t2DefDiff = Math.round((exp1 - s1) * offScale2);
     
     // Determine which team is winner/loser for Elo application
     const t1EloChange = s1 > s2 ? winnerEloChange : -loserEloChange;
@@ -493,6 +521,8 @@ const SportsBettingModelPro = () => {
     }
 
     const newLog = [];
+    // Track games played during recalculation for dynamic K and confidence weights
+    const gamesPlayedTracker = {};
 
     // Walk through the original log in order, skipping the deleted index
     for (let idx = 0; idx < gameLog.length; idx++) {
@@ -525,14 +555,20 @@ const SportsBettingModelPro = () => {
       const t1 = recalcTeams[game.team1];
       const t2 = recalcTeams[game.team2];
 
-      // Elo change
+      // Get games played for dynamic K and confidence-weighted updates
+      const t1Games = gamesPlayedTracker[game.team1] || 0;
+      const t2Games = gamesPlayedTracker[game.team2] || 0;
+      const avgGamesPlayed = (t1Games + t2Games) / 2;
+
+      // Elo change with dynamic K-factor
       const winnerName = s1 > s2 ? game.team1 : game.team2;
       const loserName = s1 > s2 ? game.team2 : game.team1;
       const rawMov = Math.abs(s1 - s2);
       const mov = c.marginCap ? Math.min(rawMov, c.marginCap) : rawMov;
 
-      const exp = eloToWinProb(recalcTeams[winnerName].elo, recalcTeams[loserName].elo);
-      const baseEloChange = Math.round(c.kFactor * Math.min(Math.log(mov * (c.marginMult || 1) + 1) * 0.8 + 1, 2.5) * (1 - exp));
+      const expWin = eloToWinProb(recalcTeams[winnerName].elo, recalcTeams[loserName].elo);
+      const dynamicK = getDynamicK(c.kFactor, avgGamesPlayed);
+      const baseEloChange = Math.round(dynamicK * Math.min(Math.log(mov * (c.marginMult || 1) + 1) * 0.8 + 1, 2.5) * (1 - expWin));
 
       // NHL OT/SO adjustment
       let winnerEloChange = baseEloChange;
@@ -547,12 +583,17 @@ const SportsBettingModelPro = () => {
       const exp1 = c.avgScore * (1 + ((t1.off - 100) - (t2.def - 100)) * ri / 100);
       const exp2 = c.avgScore * (1 + ((t2.off - 100) - (t1.def - 100)) * ri / 100);
 
-      // Offense/Defense adjustments
-      const offScale = 0.3;
-      const t1OffDiff = Math.round((s1 - exp1) * offScale);
-      const t2OffDiff = Math.round((s2 - exp2) * offScale);
-      const t1DefDiff = Math.round((exp2 - s2) * offScale);
-      const t2DefDiff = Math.round((exp1 - s1) * offScale);
+      // Confidence-weighted offense/defense adjustments
+      const offScale1 = getConfidenceScale(t1Games);
+      const offScale2 = getConfidenceScale(t2Games);
+      const t1OffDiff = Math.round((s1 - exp1) * offScale1);
+      const t2OffDiff = Math.round((s2 - exp2) * offScale2);
+      const t1DefDiff = Math.round((exp2 - s2) * offScale1);
+      const t2DefDiff = Math.round((exp1 - s1) * offScale2);
+
+      // Track games played
+      gamesPlayedTracker[game.team1] = t1Games + 1;
+      gamesPlayedTracker[game.team2] = t2Games + 1;
 
       // Apply Elo changes for this game
       const t1EloChange = s1 > s2 ? winnerEloChange : -loserEloChange;
@@ -1445,12 +1486,15 @@ const SportsBettingModelPro = () => {
 
   const importSelectedGames = () => {
     const gamesToImport = espnGames.filter(g => selectedGames[g.id] && g.canImport);
-    
+
     if (gamesToImport.length === 0) {
       alert('No valid games selected to import');
       return;
     }
-    
+
+    // Track games played during batch import (since state updates are batched)
+    const batchGamesPlayed = {};
+
     gamesToImport.forEach(game => {
       // Set the result fields and trigger update
       const t1 = teams[game.matchedHome];
@@ -1458,31 +1502,44 @@ const SportsBettingModelPro = () => {
       const s1 = game.homeScore;
       const s2 = game.awayScore;
       const c = sportConfig[sport];
-      
-      // Calculate Elo change
+
+      // Get games played including batch progress
+      const t1GamesFromLog = getGamesPlayedFromLog(game.matchedHome, gameLog);
+      const t2GamesFromLog = getGamesPlayedFromLog(game.matchedAway, gameLog);
+      const t1Games = t1GamesFromLog + (batchGamesPlayed[game.matchedHome] || 0);
+      const t2Games = t2GamesFromLog + (batchGamesPlayed[game.matchedAway] || 0);
+      const avgGamesPlayed = (t1Games + t2Games) / 2;
+
+      // Calculate Elo change with dynamic K-factor
       const winner = s1 > s2 ? game.matchedHome : game.matchedAway;
       const loser = s1 > s2 ? game.matchedAway : game.matchedHome;
       const rawMov = Math.abs(s1 - s2);
       const mov = c.marginCap ? Math.min(rawMov, c.marginCap) : rawMov; // Cap blowouts for college sports
       const exp = eloToWinProb(teams[winner].elo, teams[loser].elo);
-      let eloChange = Math.round(c.kFactor * Math.min(Math.log(mov * (c.marginMult || 1) + 1) * 0.8 + 1, 2.5) * (1 - exp));
-      
+      const dynamicK = getDynamicK(c.kFactor, avgGamesPlayed);
+      let eloChange = Math.round(dynamicK * Math.min(Math.log(mov * (c.marginMult || 1) + 1) * 0.8 + 1, 2.5) * (1 - exp));
+
       // NHL OT adjustment: OT losses get reduced Elo penalty (they still earn a standings point)
       // OT wins also get slightly reduced gain (it was essentially a tie that got broken)
       const isNHLOT = sport === 'nhl' && game.isOT;
       const otLossFactor = 0.25;  // OT loser only loses 25% of normal Elo
       const otWinFactor = 0.75;   // OT winner only gains 75% of normal Elo
-      
-      // Calculate off/def changes (must be before setTeams since we need t1, t2 values)
+
+      // Calculate off/def changes with confidence-weighted scaling
       const ri = c.ratingImpact || 1.0;
       const exp1 = c.avgScore * (1 + ((t1.off - 100) - (t2.def - 100)) * ri / 100);
       const exp2 = c.avgScore * (1 + ((t2.off - 100) - (t1.def - 100)) * ri / 100);
-      const offScale = 0.3;
-      const t1OffDiff = Math.round((s1 - exp1) * offScale);
-      const t2OffDiff = Math.round((s2 - exp2) * offScale);
-      const t1DefDiff = Math.round((exp2 - s2) * offScale);
-      const t2DefDiff = Math.round((exp1 - s1) * offScale);
-      
+      const offScale1 = getConfidenceScale(t1Games);
+      const offScale2 = getConfidenceScale(t2Games);
+      const t1OffDiff = Math.round((s1 - exp1) * offScale1);
+      const t2OffDiff = Math.round((s2 - exp2) * offScale2);
+      const t1DefDiff = Math.round((exp2 - s2) * offScale1);
+      const t2DefDiff = Math.round((exp1 - s1) * offScale2);
+
+      // Track games played for this batch
+      batchGamesPlayed[game.matchedHome] = (batchGamesPlayed[game.matchedHome] || 0) + 1;
+      batchGamesPlayed[game.matchedAway] = (batchGamesPlayed[game.matchedAway] || 0) + 1;
+
       // Calculate actual Elo changes for this game
       const winnerEloChange = isNHLOT ? Math.round(eloChange * otWinFactor) : eloChange;
       const loserEloChange = isNHLOT ? Math.round(eloChange * otLossFactor) : eloChange;
@@ -3411,15 +3468,32 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
               <div className="flex justify-between items-center mb-3">
                 <h2 className="text-lg font-bold">📊 {config.name} Power Ratings ({teamList.length} teams)</h2>
                 <div className="flex gap-2">
-                  <button 
+                  <button
                     onClick={() => {
                       const data = teamList.map(name => `${name}: Elo ${teams[name].elo}, Off ${teams[name].off}, Def ${teams[name].def}`).join('\n');
                       navigator.clipboard.writeText(data);
                       alert('Ratings copied to clipboard!');
-                    }} 
+                    }}
                     className="text-xs text-blue-500 hover:text-blue-700"
                   >
                     📋 Copy All
+                  </button>
+                  <button
+                    onClick={() => {
+                      const gamesPlayedData = teamList.map(name => {
+                        const gp = getGamesPlayedFromLog(name, gameLog);
+                        return `${name}: ${gp} games`;
+                      }).sort((a, b) => {
+                        const gpA = parseInt(a.split(': ')[1]);
+                        const gpB = parseInt(b.split(': ')[1]);
+                        return gpB - gpA;
+                      }).join('\n');
+                      navigator.clipboard.writeText(gamesPlayedData);
+                      alert('Games played copied to clipboard!');
+                    }}
+                    className="text-xs text-purple-500 hover:text-purple-700"
+                  >
+                    🎮 Copy GP
                   </button>
                   <button onClick={resetToBaseline} className="text-xs text-orange-500 hover:text-orange-700">
                     {(sport === 'cbb' || sport === 'cfb') ? 'Clear & Reimport' : 'Reset to 1500'}
