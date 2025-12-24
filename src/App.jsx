@@ -505,16 +505,36 @@ const SportsBettingModelPro = () => {
             const detail = await detailRes.json();
 
             let athleteInfo = {};
+            let gamesPlayed = 0;
             if (detail.athlete?.$ref) {
               const athleteRes = await fetch(detail.athlete.$ref);
               athleteInfo = await athleteRes.json();
+
+              // Try to get games played from athlete statistics
+              if (athleteInfo.statistics?.$ref) {
+                try {
+                  const statsRes = await fetch(athleteInfo.statistics.$ref);
+                  const statsData = await statsRes.json();
+                  // Look for games played in stats (varies by sport)
+                  const gpStat = statsData.splits?.categories?.[0]?.stats?.find(
+                    s => s.name === 'gamesPlayed' || s.name === 'GP' || s.name === 'games'
+                  );
+                  gamesPlayed = gpStat?.value || 0;
+                } catch { /* stats fetch failed, use 0 */ }
+              }
+              // Fallback: check if experience indicates they've played
+              if (gamesPlayed === 0 && athleteInfo.experience?.years > 0) {
+                gamesPlayed = 10; // Assume veterans have played
+              }
             }
 
             return {
               player: athleteInfo.displayName || 'Unknown',
               position: athleteInfo.position?.abbreviation || 'UNK',
               status: detail.status || 'Unknown',
-              injury: detail.type?.description || detail.type?.name || 'Undisclosed'
+              injury: detail.type?.description || detail.type?.name || 'Undisclosed',
+              gamesPlayed,
+              experience: athleteInfo.experience?.years || 0
             };
           } catch { return null; }
         })
@@ -536,10 +556,39 @@ const SportsBettingModelPro = () => {
 
     const breakdown = [];
 
+    // Get status multiplier with case-insensitive matching
+    const getStatusMult = (status) => {
+      const s = (status || '').toLowerCase();
+      if (s.includes('out') || s === 'ir' || s.includes('injured reserve')) return 1.0;
+      if (s.includes('doubtful')) return 0.75;
+      if (s.includes('questionable')) return 0.20;
+      if (s.includes('day')) return 0.15; // Day-to-Day
+      if (s.includes('probable')) return 0.05;
+      return 0.1; // default for unknown
+    };
+
+    // Get games played multiplier - considers both games this season AND experience
+    // Veterans returning from injury with few games still matter
+    const getGamesMult = (gamesPlayed, experience) => {
+      // Veterans (1+ years experience) returning from injury still matter
+      if (experience > 0) {
+        if (gamesPlayed === 0) return 0.5;  // Vet who hasn't played yet this year
+        if (gamesPlayed < 5) return 0.75;   // Vet just back from injury
+        if (gamesPlayed < 15) return 0.9;   // Vet working back to form
+        return 1.0;
+      }
+      // Rookies/prospects with few games don't matter much
+      if (gamesPlayed === 0) return 0;      // Prospect like Michael Misa
+      if (gamesPlayed < 5) return 0.3;      // Barely played rookie
+      if (gamesPlayed < 15) return 0.6;     // Limited role rookie
+      return 1.0;
+    };
+
     for (const injury of injuries) {
       const posWeight = weights[injury.position] || weights.default;
-      const statusMult = statusMultipliers[injury.status] || statusMultipliers.default;
-      const rawImpact = maxImpact * posWeight * statusMult;
+      const statusMult = getStatusMult(injury.status);
+      const gamesMult = getGamesMult(injury.gamesPlayed || 0, injury.experience || 0);
+      const rawImpact = maxImpact * posWeight * statusMult * gamesMult;
       breakdown.push({ ...injury, impact: Math.round(rawImpact) });
     }
 
@@ -558,10 +607,12 @@ const SportsBettingModelPro = () => {
     const cappedImpact = Math.max(Math.round(totalImpact), Math.round(maxImpact * 1.2));
 
     // Key injuries = Out/IR/Doubtful with real impact (not Questionable bench players)
-    const keyStatuses = ['Out', 'IR', 'Injured Reserve', 'Doubtful'];
-    const keyInjuries = breakdown.filter(b =>
-      keyStatuses.includes(b.status) && b.impact <= -15
-    );
+    // Use case-insensitive matching since ESPN status strings vary
+    const isKeyStatus = (status) => {
+      const s = (status || '').toLowerCase();
+      return s.includes('out') || s.includes('ir') || s.includes('injured') || s.includes('doubtful');
+    };
+    const keyInjuries = breakdown.filter(b => isKeyStatus(b.status) && b.impact <= -15);
 
     return {
       totalImpact: cappedImpact,
