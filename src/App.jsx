@@ -90,7 +90,10 @@ const SportsBettingModelPro = () => {
   const [todaysGames, setTodaysGames] = useState([]);
   const [todaysGamesLoading, setTodaysGamesLoading] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
-  const [gamePickerDate, setGamePickerDate] = useState(new Date().toISOString().split('T')[0]);
+  const [gamePickerDate, setGamePickerDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  });
 
   // AI Insights State
   const [aiInsights, setAiInsights] = useState(null);
@@ -3111,9 +3114,10 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                     <div className="p-3 border-b bg-gray-50 flex items-center justify-center gap-2">
                       <button
                         onClick={() => {
-                          const d = new Date(gamePickerDate);
-                          d.setDate(d.getDate() - 1);
-                          const newDate = d.toISOString().split('T')[0];
+                          // Parse date parts to avoid timezone issues
+                          const [y, m, d] = gamePickerDate.split('-').map(Number);
+                          const date = new Date(y, m - 1, d - 1); // month is 0-indexed
+                          const newDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                           setGamePickerDate(newDate);
                           setTimeout(fetchTodaysGames, 0);
                         }}
@@ -3132,9 +3136,10 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       />
                       <button
                         onClick={() => {
-                          const d = new Date(gamePickerDate);
-                          d.setDate(d.getDate() + 1);
-                          const newDate = d.toISOString().split('T')[0];
+                          // Parse date parts to avoid timezone issues
+                          const [y, m, d] = gamePickerDate.split('-').map(Number);
+                          const date = new Date(y, m - 1, d + 1); // month is 0-indexed
+                          const newDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                           setGamePickerDate(newDate);
                           setTimeout(fetchTodaysGames, 0);
                         }}
@@ -3144,7 +3149,9 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       </button>
                       <button
                         onClick={() => {
-                          setGamePickerDate(new Date().toISOString().split('T')[0]);
+                          const now = new Date();
+                          const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                          setGamePickerDate(today);
                           setTimeout(fetchTodaysGames, 0);
                         }}
                         className="px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded text-xs font-medium"
@@ -3161,7 +3168,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       ) : todaysGames.length === 0 ? (
                         <div className="text-center py-8 text-gray-500">
                           <p className="text-4xl mb-2">🏟️</p>
-                          <p>No games scheduled for {gamePickerDate === new Date().toISOString().split('T')[0] ? 'today' : gamePickerDate}</p>
+                          <p>No games scheduled for {(() => { const n = new Date(); return gamePickerDate === `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })() ? 'today' : gamePickerDate}</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
