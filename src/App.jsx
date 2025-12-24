@@ -533,7 +533,8 @@ const SportsBettingModelPro = () => {
               position: athleteInfo.position?.abbreviation || 'UNK',
               status: detail.status || 'Unknown',
               injury: detail.type?.description || detail.type?.name || 'Undisclosed',
-              gamesPlayed
+              gamesPlayed,
+              experience: athleteInfo.experience?.years || 0
             };
           } catch { return null; }
         })
@@ -566,18 +567,27 @@ const SportsBettingModelPro = () => {
       return 0.1; // default for unknown
     };
 
-    // Get games played multiplier - players who haven't played don't matter
-    const getGamesMult = (gamesPlayed) => {
-      if (gamesPlayed === 0) return 0; // Hasn't played = no impact
-      if (gamesPlayed < 5) return 0.3; // Barely played
-      if (gamesPlayed < 15) return 0.7; // Limited role
-      return 1.0; // Regular contributor
+    // Get games played multiplier - considers both games this season AND experience
+    // Veterans returning from injury with few games still matter
+    const getGamesMult = (gamesPlayed, experience) => {
+      // Veterans (1+ years experience) returning from injury still matter
+      if (experience > 0) {
+        if (gamesPlayed === 0) return 0.5;  // Vet who hasn't played yet this year
+        if (gamesPlayed < 5) return 0.75;   // Vet just back from injury
+        if (gamesPlayed < 15) return 0.9;   // Vet working back to form
+        return 1.0;
+      }
+      // Rookies/prospects with few games don't matter much
+      if (gamesPlayed === 0) return 0;      // Prospect like Michael Misa
+      if (gamesPlayed < 5) return 0.3;      // Barely played rookie
+      if (gamesPlayed < 15) return 0.6;     // Limited role rookie
+      return 1.0;
     };
 
     for (const injury of injuries) {
       const posWeight = weights[injury.position] || weights.default;
       const statusMult = getStatusMult(injury.status);
-      const gamesMult = getGamesMult(injury.gamesPlayed || 0);
+      const gamesMult = getGamesMult(injury.gamesPlayed || 0, injury.experience || 0);
       const rawImpact = maxImpact * posWeight * statusMult * gamesMult;
       breakdown.push({ ...injury, impact: Math.round(rawImpact) });
     }
