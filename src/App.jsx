@@ -90,7 +90,10 @@ const SportsBettingModelPro = () => {
   const [todaysGames, setTodaysGames] = useState([]);
   const [todaysGamesLoading, setTodaysGamesLoading] = useState(false);
   const [showGamePicker, setShowGamePicker] = useState(false);
-  const [gamePickerDate, setGamePickerDate] = useState(new Date().toISOString().split('T')[0]);
+  const [gamePickerDate, setGamePickerDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  });
 
   // AI Insights State
   const [aiInsights, setAiInsights] = useState(null);
@@ -511,20 +514,47 @@ const SportsBettingModelPro = () => {
               athleteInfo = await athleteRes.json();
 
               // Try to get games played from athlete statistics
+              let statsFound = false;
               if (athleteInfo.statistics?.$ref) {
                 try {
                   const statsRes = await fetch(athleteInfo.statistics.$ref);
                   const statsData = await statsRes.json();
-                  // Look for games played in stats (varies by sport)
-                  const gpStat = statsData.splits?.categories?.[0]?.stats?.find(
-                    s => s.name === 'gamesPlayed' || s.name === 'GP' || s.name === 'games'
-                  );
-                  gamesPlayed = gpStat?.value || 0;
-                } catch { /* stats fetch failed, use 0 */ }
+                  // Search for games played in various possible locations
+                  const findGP = (obj) => {
+                    if (!obj) return null;
+                    // Direct stats array
+                    if (Array.isArray(obj.stats)) {
+                      const gp = obj.stats.find(s =>
+                        s.name?.toLowerCase().includes('gamesplayed') ||
+                        s.name === 'GP' ||
+                        s.abbreviation === 'GP'
+                      );
+                      if (gp?.value) return gp.value;
+                    }
+                    // Nested in splits/categories
+                    if (obj.splits?.categories) {
+                      for (const cat of obj.splits.categories) {
+                        const gp = cat.stats?.find(s =>
+                          s.name?.toLowerCase().includes('gamesplayed') ||
+                          s.name === 'GP' ||
+                          s.abbreviation === 'GP'
+                        );
+                        if (gp?.value) return gp.value;
+                      }
+                    }
+                    return null;
+                  };
+                  const gpValue = findGP(statsData);
+                  if (gpValue !== null) {
+                    gamesPlayed = gpValue;
+                    statsFound = true;
+                  }
+                } catch { /* stats fetch failed */ }
               }
-              // Fallback: check if experience indicates they've played
-              if (gamesPlayed === 0 && athleteInfo.experience?.years > 0) {
-                gamesPlayed = 10; // Assume veterans have played
+              // Only use experience fallback if we couldn't fetch stats
+              // If stats say 0 games, trust that (like Dejounte Murray)
+              if (!statsFound && athleteInfo.experience?.years > 0) {
+                gamesPlayed = 20; // Assume veterans have played if we couldn't get stats
               }
             }
 
@@ -540,7 +570,12 @@ const SportsBettingModelPro = () => {
         })
       );
 
-      return injuries.filter(Boolean);
+      // Filter out "Active" players - they're healthy and shouldn't be in injury list
+      return injuries.filter(inj => {
+        if (!inj) return false;
+        const status = (inj.status || '').toLowerCase();
+        return !status.includes('active') && status !== 'healthy';
+      });
     } catch (error) {
       console.warn(`Failed to fetch injuries for ${sp} team ${teamId}:`, error);
       return [];
@@ -561,6 +596,8 @@ const SportsBettingModelPro = () => {
       // Numeric codes (12=LTIR, etc) are IR statuses - definitely out
       if (!isNaN(status) && status !== '') return 1.0;
       const s = (status || '').toLowerCase();
+      // Active/Healthy = no impact (shouldn't be in list but safety net)
+      if (s.includes('active') || s === 'healthy') return 0;
       if (s.includes('out') || s === 'ir' || s.includes('injured') || s.includes('ltir')) return 1.0;
       if (s.includes('doubtful')) return 0.75;
       if (s.includes('questionable')) return 0.20;
@@ -3077,9 +3114,10 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                     <div className="p-3 border-b bg-gray-50 flex items-center justify-center gap-2">
                       <button
                         onClick={() => {
-                          const d = new Date(gamePickerDate);
-                          d.setDate(d.getDate() - 1);
-                          const newDate = d.toISOString().split('T')[0];
+                          // Parse date parts to avoid timezone issues
+                          const [y, m, d] = gamePickerDate.split('-').map(Number);
+                          const date = new Date(y, m - 1, d - 1); // month is 0-indexed
+                          const newDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                           setGamePickerDate(newDate);
                           setTimeout(fetchTodaysGames, 0);
                         }}
@@ -3098,9 +3136,10 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       />
                       <button
                         onClick={() => {
-                          const d = new Date(gamePickerDate);
-                          d.setDate(d.getDate() + 1);
-                          const newDate = d.toISOString().split('T')[0];
+                          // Parse date parts to avoid timezone issues
+                          const [y, m, d] = gamePickerDate.split('-').map(Number);
+                          const date = new Date(y, m - 1, d + 1); // month is 0-indexed
+                          const newDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                           setGamePickerDate(newDate);
                           setTimeout(fetchTodaysGames, 0);
                         }}
@@ -3110,7 +3149,9 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       </button>
                       <button
                         onClick={() => {
-                          setGamePickerDate(new Date().toISOString().split('T')[0]);
+                          const now = new Date();
+                          const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                          setGamePickerDate(today);
                           setTimeout(fetchTodaysGames, 0);
                         }}
                         className="px-2 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded text-xs font-medium"
@@ -3127,7 +3168,7 @@ Keep the entire response under 400 words. Be direct and insightful, not generic.
                       ) : todaysGames.length === 0 ? (
                         <div className="text-center py-8 text-gray-500">
                           <p className="text-4xl mb-2">🏟️</p>
-                          <p>No games scheduled for {gamePickerDate === new Date().toISOString().split('T')[0] ? 'today' : gamePickerDate}</p>
+                          <p>No games scheduled for {(() => { const n = new Date(); return gamePickerDate === `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })() ? 'today' : gamePickerDate}</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
