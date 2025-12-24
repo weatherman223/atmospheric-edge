@@ -536,9 +536,20 @@ const SportsBettingModelPro = () => {
 
     const breakdown = [];
 
+    // Get status multiplier with case-insensitive matching
+    const getStatusMult = (status) => {
+      const s = (status || '').toLowerCase();
+      if (s.includes('out') || s === 'ir' || s.includes('injured reserve')) return 1.0;
+      if (s.includes('doubtful')) return 0.75;
+      if (s.includes('questionable')) return 0.20;
+      if (s.includes('day')) return 0.15; // Day-to-Day
+      if (s.includes('probable')) return 0.05;
+      return 0.1; // default for unknown
+    };
+
     for (const injury of injuries) {
       const posWeight = weights[injury.position] || weights.default;
-      const statusMult = statusMultipliers[injury.status] || statusMultipliers.default;
+      const statusMult = getStatusMult(injury.status);
       const rawImpact = maxImpact * posWeight * statusMult;
       breakdown.push({ ...injury, impact: Math.round(rawImpact) });
     }
@@ -558,10 +569,12 @@ const SportsBettingModelPro = () => {
     const cappedImpact = Math.max(Math.round(totalImpact), Math.round(maxImpact * 1.2));
 
     // Key injuries = Out/IR/Doubtful with real impact (not Questionable bench players)
-    const keyStatuses = ['Out', 'IR', 'Injured Reserve', 'Doubtful'];
-    const keyInjuries = breakdown.filter(b =>
-      keyStatuses.includes(b.status) && b.impact <= -15
-    );
+    // Use case-insensitive matching since ESPN status strings vary
+    const isKeyStatus = (status) => {
+      const s = (status || '').toLowerCase();
+      return s.includes('out') || s.includes('ir') || s.includes('injured') || s.includes('doubtful');
+    };
+    const keyInjuries = breakdown.filter(b => isKeyStatus(b.status) && b.impact <= -15);
 
     return {
       totalImpact: cappedImpact,
