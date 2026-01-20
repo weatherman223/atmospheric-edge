@@ -818,10 +818,12 @@ const SportsBettingModelPro = () => {
     // Scale decreases as we have more data (more confident in current ratings)
     const offScale1 = getConfidenceScale(t1Games);
     const offScale2 = getConfidenceScale(t2Games);
-    const t1OffDiff = Math.round((s1 - exp1) * offScale1);
-    const t2OffDiff = Math.round((s2 - exp2) * offScale2);
-    const t1DefDiff = Math.round((exp2 - s2) * offScale1); // Good defense = opponent scores LESS than expected → def goes UP
-    const t2DefDiff = Math.round((exp1 - s1) * offScale2);
+    // Low-scoring sports (like hockey) need a multiplier so score diffs don't round to 0
+    const offDefMult = c.avgScore < 10 ? 10 / c.avgScore : 1;
+    const t1OffDiff = Math.round((s1 - exp1) * offScale1 * offDefMult);
+    const t2OffDiff = Math.round((s2 - exp2) * offScale2 * offDefMult);
+    const t1DefDiff = Math.round((exp2 - s2) * offScale1 * offDefMult); // Good defense = opponent scores LESS than expected → def goes UP
+    const t2DefDiff = Math.round((exp1 - s1) * offScale2 * offDefMult);
     
     // Determine which team is winner/loser for Elo application
     const t1EloChange = s1 > s2 ? winnerEloChange : -loserEloChange;
@@ -943,10 +945,12 @@ const SportsBettingModelPro = () => {
       // Confidence-weighted offense/defense adjustments
       const offScale1 = getConfidenceScale(t1Games);
       const offScale2 = getConfidenceScale(t2Games);
-      const t1OffDiff = Math.round((s1 - exp1) * offScale1);
-      const t2OffDiff = Math.round((s2 - exp2) * offScale2);
-      const t1DefDiff = Math.round((exp2 - s2) * offScale1);
-      const t2DefDiff = Math.round((exp1 - s1) * offScale2);
+      // Low-scoring sports (like hockey) need a multiplier so score diffs don't round to 0
+      const offDefMult = c.avgScore < 10 ? 10 / c.avgScore : 1;
+      const t1OffDiff = Math.round((s1 - exp1) * offScale1 * offDefMult);
+      const t2OffDiff = Math.round((s2 - exp2) * offScale2 * offDefMult);
+      const t1DefDiff = Math.round((exp2 - s2) * offScale1 * offDefMult);
+      const t2DefDiff = Math.round((exp1 - s1) * offScale2 * offDefMult);
 
       // Track games played
       gamesPlayedTracker[game.team1] = t1Games + 1;
@@ -1887,10 +1891,12 @@ const SportsBettingModelPro = () => {
       const exp2 = c.avgScore * (1 + ((t2.off - 100) - (t1.def - 100)) * ri / 100);
       const offScale1 = getConfidenceScale(t1Games);
       const offScale2 = getConfidenceScale(t2Games);
-      const t1OffDiff = Math.round((s1 - exp1) * offScale1);
-      const t2OffDiff = Math.round((s2 - exp2) * offScale2);
-      const t1DefDiff = Math.round((exp2 - s2) * offScale1);
-      const t2DefDiff = Math.round((exp1 - s1) * offScale2);
+      // Low-scoring sports (like hockey) need a multiplier so score diffs don't round to 0
+      const offDefMult = c.avgScore < 10 ? 10 / c.avgScore : 1;
+      const t1OffDiff = Math.round((s1 - exp1) * offScale1 * offDefMult);
+      const t2OffDiff = Math.round((s2 - exp2) * offScale2 * offDefMult);
+      const t1DefDiff = Math.round((exp2 - s2) * offScale1 * offDefMult);
+      const t2DefDiff = Math.round((exp1 - s1) * offScale2 * offDefMult);
 
       // Track games played for this batch
       batchGamesPlayed[game.matchedHome] = (batchGamesPlayed[game.matchedHome] || 0) + 1;
@@ -2128,10 +2134,12 @@ const SportsBettingModelPro = () => {
         const exp1 = c.avgScore * (1 + ((t1.off - 100) - (t2.def - 100)) * ri / 100);
         const exp2 = c.avgScore * (1 + ((t2.off - 100) - (t1.def - 100)) * ri / 100);
         const offScale = 0.3;
-        const t1OffDiff = Math.round((s1 - exp1) * offScale);
-        const t2OffDiff = Math.round((s2 - exp2) * offScale);
-        const t1DefDiff = Math.round((exp2 - s2) * offScale);
-        const t2DefDiff = Math.round((exp1 - s1) * offScale);
+        // Low-scoring sports (like hockey) need a multiplier so score diffs don't round to 0
+        const offDefMult = c.avgScore < 10 ? 10 / c.avgScore : 1;
+        const t1OffDiff = Math.round((s1 - exp1) * offScale * offDefMult);
+        const t2OffDiff = Math.round((s2 - exp2) * offScale * offDefMult);
+        const t1DefDiff = Math.round((exp2 - s2) * offScale * offDefMult);
+        const t2DefDiff = Math.round((exp1 - s1) * offScale * offDefMult);
         
         // Update current teams object
         currentTeams = {
