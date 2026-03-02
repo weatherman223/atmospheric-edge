@@ -10,7 +10,6 @@ export default defineConfig({
         target: 'https://ncaa-api.henrygd.me',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/ncaa-api/, ''),
-        secure: false,
       }
     }
   }

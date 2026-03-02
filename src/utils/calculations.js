@@ -19,6 +19,21 @@ export const safeParseFloat = (val, fallback = 0) => {
   return isNaN(parsed) ? fallback : parsed;
 };
 
+const erfApprox = (x) => {
+  const a1 = 0.254829592;
+  const a2 = -0.284496736;
+  const a3 = 1.421413741;
+  const a4 = -1.453152027;
+  const a5 = 1.061405429;
+  const p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const absX = Math.abs(x);
+  const t = 1 / (1 + p * absX);
+  return sign * (1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-absX * absX));
+};
+
+const normalCdf = (z) => 0.5 * (1 + erfApprox(z));
+
 /**
  * Convert Elo ratings to win probability
  * @param {number} r1 - Team 1 Elo rating
@@ -37,6 +52,7 @@ export const eloToWinProb = (r1, r2, ha = 0) => {
  */
 export const americanToImpliedProb = (o) => {
   const x = safeParseFloat(o);
+  if (x === 0) return 0.5; // Pick'em/even market
   return x > 0 ? 100 / (x + 100) : Math.abs(x) / (Math.abs(x) + 100);
 };
 
@@ -68,6 +84,7 @@ export const probToAmerican = (p) => {
  */
 export const americanToDecimal = (o) => {
   const x = safeParseFloat(o);
+  if (x === 0) return 2.0; // Pick'em/even market
   return x > 0 ? x / 100 + 1 : 100 / Math.abs(x) + 1;
 };
 
@@ -125,18 +142,7 @@ export const kellyStakeCapped = (p, o, b, f, maxBet) => {
 export const spreadCoverProb = (pred, book, sportConfig) => {
   const diff = safeParseFloat(book) - pred;
   const z = diff / (sportConfig.scoringVar * Math.sqrt(2));
-
-  // Error function approximation for normal CDF
-  const erf = (x) => {
-    const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
-    const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
-    const sign = x < 0 ? -1 : 1;
-    x = Math.abs(x);
-    const t = 1 / (1 + p * x);
-    return sign * (1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x));
-  };
-
-  return 0.5 * (1 + erf(z));
+  return normalCdf(z);
 };
 
 /**
@@ -150,18 +156,7 @@ export const spreadCoverProb = (pred, book, sportConfig) => {
 export const totalProb = (pred, book, isOver, sportConfig) => {
   const diff = pred - safeParseFloat(book);
   const z = diff / (sportConfig.scoringVar * Math.sqrt(2) * 1.2);
-
-  // Error function approximation for normal CDF
-  const erf = (x) => {
-    const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
-    const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
-    const sign = x < 0 ? -1 : 1;
-    x = Math.abs(x);
-    const t = 1 / (1 + p * x);
-    return sign * (1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x));
-  };
-
-  const over = 0.5 * (1 + erf(z));
+  const over = normalCdf(z);
   return isOver ? over : 1 - over;
 };
 

@@ -10,6 +10,7 @@ import {
   kellyStakeCapped,
   spreadCoverProb,
   totalProb,
+  calculateCLV,
   getConfidenceTier
 } from './calculations';
 
@@ -106,6 +107,11 @@ describe('americanToImpliedProb', () => {
     expect(americanToImpliedProb('-110')).toBeCloseTo(0.5238, 3);
     expect(americanToImpliedProb('+150')).toBeCloseTo(0.4, 2);
   });
+
+  it('handles pick\'em odds as 50% implied', () => {
+    expect(americanToImpliedProb(0)).toBeCloseTo(0.5, 5);
+    expect(americanToImpliedProb('PK')).toBeCloseTo(0.5, 5);
+  });
 });
 
 describe('probToAmerican', () => {
@@ -150,6 +156,11 @@ describe('americanToDecimal', () => {
 
   it('handles EVEN odds', () => {
     expect(americanToDecimal('EVEN')).toBe(2.0);
+  });
+
+  it('handles pick\'em odds as decimal 2.0', () => {
+    expect(americanToDecimal(0)).toBe(2.0);
+    expect(americanToDecimal('PK')).toBe(2.0);
   });
 });
 
@@ -351,6 +362,27 @@ describe('getConfidenceTier', () => {
     expect(tier).toHaveProperty('label');
     expect(tier).toHaveProperty('color');
     expect(tier).toHaveProperty('bg');
+  });
+});
+
+describe('calculateCLV', () => {
+  it('returns positive CLV when market moves toward your position', () => {
+    const clv = calculateCLV(+120, +100);
+    expect(clv).toBeGreaterThan(0);
+  });
+
+  it('returns negative CLV when market moves against your position', () => {
+    const clv = calculateCLV(-110, +100);
+    expect(clv).toBeLessThan(0);
+  });
+
+  it('returns zero when opening and closing odds match', () => {
+    expect(calculateCLV(-110, -110)).toBeCloseTo(0, 5);
+  });
+
+  it('returns null when closing odds are missing', () => {
+    expect(calculateCLV(-110, '')).toBeNull();
+    expect(calculateCLV(-110, null)).toBeNull();
   });
 });
 

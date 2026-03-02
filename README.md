@@ -18,7 +18,7 @@ A single-page React application for modeling betting edges across multiple sport
 - `src/utils/calculations.js` – Elo, odds, EV, Kelly, spread/total helpers.
 - `src/utils/simulations.js` – Monte Carlo score simulations.
 - `src/main.jsx` – React entry that mounts the app.
-- `src/index.css` & `src/App.css` – Tailwind (v4) base styles and component styling.
+- `src/index.css` – Tailwind (v4) global styles.
 - `public/` & `index.html` – Static assets and HTML shell.
 - Build and tooling configs: `vite.config.js`, `postcss.config.js`, `tailwind.config.js`, `eslint.config.js`, `vitest.config.js`.
 
