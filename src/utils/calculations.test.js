@@ -314,46 +314,46 @@ describe('totalProb', () => {
 });
 
 describe('getConfidenceTier', () => {
-  it('classifies ELITE bets (15%+ EV)', () => {
-    const tier = getConfidenceTier(16);
+  it('classifies ELITE bets (10%+ EV)', () => {
+    const tier = getConfidenceTier(12);
     expect(tier.label).toBe('ELITE');
     expect(tier.stars).toBe('★★★★★');
     expect(tier.color).toBe('text-yellow-500');
   });
 
-  it('classifies STRONG bets (8-15% EV)', () => {
-    const tier = getConfidenceTier(10);
+  it('classifies STRONG bets (6-10% EV)', () => {
+    const tier = getConfidenceTier(7);
     expect(tier.label).toBe('STRONG');
     expect(tier.stars).toBe('★★★★☆');
     expect(tier.color).toBe('text-emerald-600');
   });
 
-  it('classifies GOOD bets (4-8% EV)', () => {
-    const tier = getConfidenceTier(5);
+  it('classifies GOOD bets (3-6% EV)', () => {
+    const tier = getConfidenceTier(4);
     expect(tier.label).toBe('GOOD');
     expect(tier.stars).toBe('★★★☆☆');
     expect(tier.color).toBe('text-blue-600');
   });
 
-  it('classifies LEAN bets (2-4% EV)', () => {
-    const tier = getConfidenceTier(3);
+  it('classifies LEAN bets (1-3% EV)', () => {
+    const tier = getConfidenceTier(2);
     expect(tier.label).toBe('LEAN');
     expect(tier.stars).toBe('★★☆☆☆');
     expect(tier.color).toBe('text-gray-600');
   });
 
-  it('classifies MARGINAL bets (<2% EV)', () => {
-    const tier = getConfidenceTier(1);
+  it('classifies MARGINAL bets (<1% EV)', () => {
+    const tier = getConfidenceTier(0.5);
     expect(tier.label).toBe('MARGINAL');
     expect(tier.stars).toBe('★☆☆☆☆');
     expect(tier.color).toBe('text-gray-400');
   });
 
   it('handles edge case at thresholds', () => {
-    expect(getConfidenceTier(15).label).toBe('ELITE');
-    expect(getConfidenceTier(14.9).label).toBe('STRONG');
-    expect(getConfidenceTier(8).label).toBe('STRONG');
-    expect(getConfidenceTier(7.9).label).toBe('GOOD');
+    expect(getConfidenceTier(10).label).toBe('ELITE');
+    expect(getConfidenceTier(9.9).label).toBe('STRONG');
+    expect(getConfidenceTier(6).label).toBe('STRONG');
+    expect(getConfidenceTier(5.9).label).toBe('GOOD');
   });
 
   it('returns all required properties', () => {
@@ -411,7 +411,7 @@ describe('Integration: Full betting scenario', () => {
     // Step 4: Check confidence tier
     const evPercent = ev * 100;
     const tier = getConfidenceTier(evPercent);
-    expect(tier.label).toBe('STRONG');
+    expect(tier.label).toBe('ELITE');
   });
 
   it('recommends no bet when EV is negative', () => {

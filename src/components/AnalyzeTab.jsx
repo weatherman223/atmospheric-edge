@@ -406,42 +406,12 @@ const AnalyzeTab = () => {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold">Model Prediction</h3>
                 <span className="text-[10px] px-2 py-1 rounded-full border border-slate-600 text-slate-200">Using {analysis.probabilitySource === 'simulation' ? 'simulation + EV' : 'analytical model'}</span>
-                {analysis.shrinkageApplied && <span className="text-[10px] px-2 py-1 rounded-full border border-amber-600 text-amber-300">Market Shrinkage</span>}
-                {analysis.calibrationApplied && <span className="text-[10px] px-2 py-1 rounded-full border border-purple-600 text-purple-300">Calibrated</span>}
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                <div>
-                  <p className="text-slate-400 text-xs">{team1.split(' ').pop()} Win %</p>
-                  <p className="text-2xl font-bold text-blue-400">{analysis.team1WinProb.toFixed(1)}%</p>
-                  <p className="text-xs text-slate-500">Fair: {analysis.team1FairOdds}</p>
-                  <p className="text-xs text-slate-600">Adj Elo: {analysis.t1AdjElo}</p>
-                  {analysis.shrinkageApplied && analysis.rawWinProb !== analysis.team1WinProb && (
-                    <p className="text-xs text-amber-400">Raw: {analysis.rawWinProb.toFixed(1)}%</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-slate-400 text-xs">{team2.split(' ').pop()} Win %</p>
-                  <p className="text-2xl font-bold text-blue-400">{analysis.team2WinProb.toFixed(1)}%</p>
-                  <p className="text-xs text-slate-500">Fair: {analysis.team2FairOdds}</p>
-                  <p className="text-xs text-slate-600">Adj Elo: {analysis.t2AdjElo}</p>
-                  {analysis.shrinkageApplied && analysis.rawWinProb !== analysis.team1WinProb && (
-                    <p className="text-xs text-amber-400">Raw: {(100 - analysis.rawWinProb).toFixed(1)}%</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-slate-400 text-xs">Predicted Spread</p>
-                  <p className="text-2xl font-bold">{team1.split(' ').pop()} {analysis.predSpread > 0 ? '+' : ''}{analysis.predSpread.toFixed(1)}</p>
-                  {analysis.shrinkageApplied && analysis.adjustedPredSpread !== null && (
-                    <p className="text-xs text-amber-400">Adj: {analysis.adjustedPredSpread > 0 ? '+' : ''}{analysis.adjustedPredSpread.toFixed(1)}</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-slate-400 text-xs">Predicted Total</p>
-                  <p className="text-2xl font-bold">{analysis.predTotal.toFixed(1)}</p>
-                  {analysis.shrinkageApplied && analysis.adjustedPredTotal !== null && (
-                    <p className="text-xs text-amber-400">Adj: {analysis.adjustedPredTotal.toFixed(1)}</p>
-                  )}
-                </div>
+                <div><p className="text-slate-400 text-xs">{team1.split(' ').pop()} Win %</p><p className="text-2xl font-bold text-blue-400">{analysis.team1WinProb.toFixed(1)}%</p><p className="text-xs text-slate-500">Fair: {analysis.team1FairOdds}</p><p className="text-xs text-slate-600">Adj Elo: {analysis.t1AdjElo}</p></div>
+                <div><p className="text-slate-400 text-xs">{team2.split(' ').pop()} Win %</p><p className="text-2xl font-bold text-blue-400">{analysis.team2WinProb.toFixed(1)}%</p><p className="text-xs text-slate-500">Fair: {analysis.team2FairOdds}</p><p className="text-xs text-slate-600">Adj Elo: {analysis.t2AdjElo}</p></div>
+                <div><p className="text-slate-400 text-xs">Predicted Spread</p><p className="text-2xl font-bold">{team1.split(' ').pop()} {analysis.predSpread > 0 ? '+' : ''}{analysis.predSpread.toFixed(1)}</p></div>
+                <div><p className="text-slate-400 text-xs">Predicted Total</p><p className="text-2xl font-bold">{analysis.predTotal.toFixed(1)}</p></div>
               </div>
               {analysis.probabilityBreakdown?.simulation && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-xs">
@@ -558,11 +528,6 @@ const AnalyzeTab = () => {
 
               <div className={cardStyle}>
                 <h3 className="font-bold text-sm mb-2">📊 Spread</h3>
-                {sportConfig[sport]?.weakSpread && (
-                  <p className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1 mb-1">
-                    Spread model is weak for {sportConfig[sport].name} (high MAE) — take with a grain of salt
-                  </p>
-                )}
                 <p className="text-[11px] text-gray-500">
                   {analysis.spreadAnalysis
                     ? `Probabilities from ${analysis.spreadAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}${analysis.spreadAnalysis.pushProb ? ` • Push: ${analysis.spreadAnalysis.pushProb.toFixed(1)}%` : ''}`

@@ -8,18 +8,13 @@ export const getInitialTeams = (sportKey) => {
   );
 };
 
-// Regress off/def ratings toward 100 to prevent drift
-// NBA: 3% regression per game (signal retention ~30% at 40 games, ~8% at 82)
-// CBB: 5% regression per game (more aggressive for shorter ~30-35 game seasons)
-// Bounds 75-125 for basketball, no regression for NFL/NHL/CFB
+// Regress off/def ratings toward 100 to prevent drift (10% per game)
+// Only for high-volume sports (NBA/CBB) where ratings can inflate over many games
+// Also applies tighter bounds for basketball (80-120 vs 70-130 for other sports)
 export const regressRating = (val, sportKey) => {
-  if (sportKey === 'nba') {
-    const regressed = val * 0.97 + 100 * 0.03;
-    return Math.round(Math.max(75, Math.min(125, regressed)));
-  }
-  if (sportKey === 'cbb') {
-    const regressed = val * 0.95 + 100 * 0.05;
-    return Math.round(Math.max(75, Math.min(125, regressed)));
+  if (sportKey === 'nba' || sportKey === 'cbb') {
+    const regressed = val * 0.925 + 100 * 0.075;
+    return Math.round(Math.max(80, Math.min(120, regressed))); // Tighter bounds for basketball
   }
   return Math.round(val); // No regression for NFL/NHL/CFB
 };

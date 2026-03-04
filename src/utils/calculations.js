@@ -178,43 +178,30 @@ export const calculateCLV = (openingOdds, closingOdds) => {
 };
 
 /**
- * Shrink a model value toward a book value
- * result = bookValue + k * (modelValue - bookValue)
- * k=1 means pure model, k=0 means pure book
- * @param {number} modelValue - Model's prediction
- * @param {number} bookValue - Book's line/implied prob
- * @param {number} k - Shrinkage coefficient (0-1)
- * @returns {number} Blended value
- */
-export const applyShrinkage = (modelValue, bookValue, k) => {
-  return bookValue + k * (modelValue - bookValue);
-};
-
-/**
  * Get confidence tier based on expected value
  * @param {number} ev - Expected value as percentage (e.g., 5 for 5%)
  * @returns {{stars: string, label: string, color: string, bg: string}}
  */
 export const getConfidenceTier = (ev) => {
-  if (ev >= 15) return {
+  if (ev >= 10) return {
     stars: '★★★★★',
     label: 'ELITE',
     color: 'text-yellow-500',
     bg: 'bg-yellow-50 border-yellow-400'
   };
-  if (ev >= 8) return {
+  if (ev >= 6) return {
     stars: '★★★★☆',
     label: 'STRONG',
     color: 'text-emerald-600',
     bg: 'bg-emerald-50 border-emerald-400'
   };
-  if (ev >= 4) return {
+  if (ev >= 3) return {
     stars: '★★★☆☆',
     label: 'GOOD',
     color: 'text-blue-600',
     bg: 'bg-blue-50 border-blue-400'
   };
-  if (ev >= 2) return {
+  if (ev >= 1) return {
     stars: '★★☆☆☆',
     label: 'LEAN',
     color: 'text-gray-600',
