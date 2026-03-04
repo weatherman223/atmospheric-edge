@@ -1,36 +1,87 @@
-import { calculateEV, spreadCoverProb, totalProb, getConfidenceTier, americanToDecimal } from './calculations';
+import { calculateEV, spreadCoverProb, totalProb, getConfidenceTier, americanToDecimal, americanToImpliedProb, applyShrinkage } from './calculations';
+import { calibrateProb } from './calibration';
 import { sportConfig } from '../config';
+
+/**
+ * Filter correlated bets — if ML home + spread home both exist, keep higher-EV one
+ * Same for away side. Prevents doubling up on the same side of a game.
+ */
+const filterCorrelatedBets = (recs) => {
+  const toRemove = new Set();
+
+  const mlHome = recs.find(r => r.betType === 'ml' && r.side === 'home');
+  const spreadHome = recs.find(r => r.betType === 'spread' && r.side === 'home');
+  if (mlHome && spreadHome) {
+    toRemove.add(mlHome.ev >= spreadHome.ev ? spreadHome : mlHome);
+  }
+
+  const mlAway = recs.find(r => r.betType === 'ml' && r.side === 'away');
+  const spreadAway = recs.find(r => r.betType === 'spread' && r.side === 'away');
+  if (mlAway && spreadAway) {
+    toRemove.add(mlAway.ev >= spreadAway.ev ? spreadAway : mlAway);
+  }
+
+  return recs.filter(r => !toRemove.has(r));
+};
 
 /**
  * Generate all positive-EV recommendations for a game given model predictions + book odds
  * @param {object} prediction - { homeWinProb, predictedSpread, predictedTotal }
  * @param {object} odds - { homeML, awayML, spread, spreadOdds, spreadOdds2, total, overOdds, underOdds }
  * @param {string} sportKey - Sport key (nfl, nba, nhl, cfb, cbb)
+ * @param {object} options - { minEV, calibrationParams }
  * @returns {Array} Array of { betType, side, ev, confidence, odds, prob, line? }
  */
-export const generateRecommendations = (prediction, odds, sportKey, { minEV = 3 } = {}) => {
+export const generateRecommendations = (prediction, odds, sportKey, { minEV: minEVOverride, calibrationParams } = {}) => {
   const config = sportConfig[sportKey];
-  const recs = [];
-  const { homeWinProb, predictedSpread, predictedTotal } = prediction;
-  const awayWinProb = 1 - homeWinProb;
+  const minEV = minEVOverride ?? config.minEV ?? 3;
+  let recs = [];
+  let { homeWinProb, predictedSpread, predictedTotal } = prediction;
+  let awayWinProb = 1 - homeWinProb;
+
+  // Apply shrinkage if enabled for this sport
+  if (config.useShrinkage) {
+    // ML: shrink win prob toward book implied prob
+    if (odds.homeML != null) {
+      const bookImplied = americanToImpliedProb(odds.homeML);
+      homeWinProb = applyShrinkage(homeWinProb, bookImplied, config.shrinkageML);
+      awayWinProb = 1 - homeWinProb;
+    }
+    // Spread: shrink predicted spread toward book spread
+    if (odds.spread != null) {
+      predictedSpread = applyShrinkage(predictedSpread, odds.spread, config.shrinkageSpread);
+    }
+    // Total: shrink predicted total toward book total
+    if (odds.total != null) {
+      predictedTotal = applyShrinkage(predictedTotal, odds.total, config.shrinkageTotal);
+    }
+  }
+
+  // Apply calibration if provided (Platt scaling)
+  const cal = calibrationParams;
 
   // ML recommendations
   if (odds.homeML != null) {
-    const ev = calculateEV(homeWinProb, odds.homeML) * 100;
+    let prob = homeWinProb;
+    if (cal?.ml) prob = calibrateProb(prob, cal.ml);
+    const ev = calculateEV(prob, odds.homeML) * 100;
     if (ev >= minEV) {
-      recs.push({ betType: 'ml', side: 'home', ev, confidence: getConfidenceTier(ev), odds: odds.homeML, prob: homeWinProb });
+      recs.push({ betType: 'ml', side: 'home', ev, confidence: getConfidenceTier(ev), odds: odds.homeML, prob });
     }
   }
   if (odds.awayML != null) {
-    const ev = calculateEV(awayWinProb, odds.awayML) * 100;
+    let prob = awayWinProb;
+    if (cal?.ml) prob = 1 - calibrateProb(homeWinProb, cal.ml);
+    const ev = calculateEV(prob, odds.awayML) * 100;
     if (ev >= minEV) {
-      recs.push({ betType: 'ml', side: 'away', ev, confidence: getConfidenceTier(ev), odds: odds.awayML, prob: awayWinProb });
+      recs.push({ betType: 'ml', side: 'away', ev, confidence: getConfidenceTier(ev), odds: odds.awayML, prob });
     }
   }
 
   // Spread recommendations
   if (odds.spread != null) {
-    const homeCoverProb = spreadCoverProb(predictedSpread, odds.spread, config);
+    let homeCoverProb = spreadCoverProb(predictedSpread, odds.spread, config);
+    if (cal?.spread) homeCoverProb = calibrateProb(homeCoverProb, cal.spread);
     const awayCoverProb = 1 - homeCoverProb;
     const homeSpreadOdds = odds.spreadOdds ?? -110;
     const awaySpreadOdds = odds.spreadOdds2 ?? -110;
@@ -47,7 +98,8 @@ export const generateRecommendations = (prediction, odds, sportKey, { minEV = 3 
 
   // Total recommendations
   if (odds.total != null) {
-    const overProb = totalProb(predictedTotal, odds.total, true, config);
+    let overProb = totalProb(predictedTotal, odds.total, true, config);
+    if (cal?.total) overProb = calibrateProb(overProb, cal.total);
     const underProb = 1 - overProb;
     const overOdds = odds.overOdds ?? -110;
     const underOdds = odds.underOdds ?? -110;
@@ -60,6 +112,17 @@ export const generateRecommendations = (prediction, odds, sportKey, { minEV = 3 
     if (underEV >= minEV) {
       recs.push({ betType: 'total', side: 'under', ev: underEV, confidence: getConfidenceTier(underEV), odds: underOdds, prob: underProb, line: odds.total });
     }
+  }
+
+  // Volume controls
+  if (config.blockCorrelatedBets) {
+    recs = filterCorrelatedBets(recs);
+  }
+
+  // Sort by EV descending, then limit per game
+  recs.sort((a, b) => b.ev - a.ev);
+  if (config.maxBetsPerGame && recs.length > config.maxBetsPerGame) {
+    recs = recs.slice(0, config.maxBetsPerGame);
   }
 
   return recs;

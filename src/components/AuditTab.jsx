@@ -519,6 +519,71 @@ const AuditTab = () => {
             })}
           </div>
 
+          {/* CLV Stats */}
+          {bettingAuditResults.clvStats && (
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-3 border-b border-white/10">
+                <h3 className="text-sm font-bold text-white">Closing Line Value (CLV)</h3>
+                <p className="text-xs text-blue-300/60">Positive CLV = model found real edges vs the market</p>
+              </div>
+              <div className="p-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <p className="text-xs text-blue-200">Avg CLV</p>
+                    <p className={`text-lg font-bold ${bettingAuditResults.clvStats.avgCLV >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {bettingAuditResults.clvStats.avgCLV >= 0 ? '+' : ''}{bettingAuditResults.clvStats.avgCLV.toFixed(2)}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-200">CLV+ Rate</p>
+                    <p className={`text-lg font-bold ${bettingAuditResults.clvStats.clvPositiveRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {bettingAuditResults.clvStats.clvPositiveRate.toFixed(1)}%
+                    </p>
+                  </div>
+                  {['ml', 'spread', 'total'].map((type) => {
+                    const ct = bettingAuditResults.clvStats.clvByType[type];
+                    if (!ct || ct.count === 0) return null;
+                    return (
+                      <div key={type}>
+                        <p className="text-xs text-blue-200 uppercase">{type} CLV</p>
+                        <p className={`text-sm font-bold ${ct.avgCLV >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {ct.avgCLV >= 0 ? '+' : ''}{ct.avgCLV.toFixed(2)}%
+                        </p>
+                        <p className="text-xs text-blue-300/60">{ct.clvPositiveRate.toFixed(0)}% positive ({ct.count})</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Calibration Results (NBA only) */}
+          {bettingAuditResults.calibrationResults && (
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-3 border-b border-white/10">
+                <h3 className="text-sm font-bold text-white">Calibration Parameters (Walk-Forward)</h3>
+                <p className="text-xs text-blue-300/60">Learned from first 60% of games, saved to localStorage for live analysis</p>
+              </div>
+              <div className="p-3 grid grid-cols-3 gap-3 text-xs">
+                {['ml', 'spread', 'total'].map((type) => {
+                  const p = bettingAuditResults.calibrationResults.params[type];
+                  const n = bettingAuditResults.calibrationResults.sampleSizes[type];
+                  const isIdentity = p.a === 1 && p.b === 0;
+                  return (
+                    <div key={type} className="bg-white/5 rounded-lg p-2">
+                      <p className="text-blue-200 uppercase font-semibold mb-1">{type}</p>
+                      <p className="text-white">a = {p.a.toFixed(4)}</p>
+                      <p className="text-white">b = {p.b.toFixed(4)}</p>
+                      <p className="text-blue-300/60 mt-1">{n} games</p>
+                      {isIdentity && <p className="text-amber-400 mt-1">Identity (not enough data)</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Recommendation Log (expandable) */}
           <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden">
             <button

@@ -5,6 +5,8 @@ import { applyGameResult } from '../utils/elo';
 import { matchTeamName } from '../utils/teamMatcher';
 import { getLocalDateString } from '../utils/date';
 import { generateRecommendations, gradeRecommendation } from '../utils/recommendations';
+import { americanToImpliedProb, spreadCoverProb, totalProb, applyShrinkage } from '../utils/calculations';
+import { learnCalibrationWalkForward, saveCalibrationParams } from '../utils/calibration';
 import {
   sportConfig,
   espnEndpoints,
@@ -286,6 +288,12 @@ export const useModelAudit = () => {
       let gamesWithOdds = 0;
       let gamesWithoutOdds = 0;
 
+      // Calibration data collection (NBA only, ALL games with odds — not just recommended)
+      const isNba = sport === 'nba';
+      const mlCalData = [];
+      const spreadCalData = [];
+      const totalCalData = [];
+
       for (let i = 0; i < completedGames.length; i++) {
         if (bettingAbortRef.current) { setBettingAuditStatus('idle'); return; }
 
@@ -305,10 +313,67 @@ export const useModelAudit = () => {
 
         if (odds) {
           gamesWithOdds++;
+
+          // Collect calibration data for ALL games with odds (avoids selection bias)
+          if (isNba) {
+            const homeWon = game.homeScore > game.awayScore;
+            const actualMargin = game.homeScore - game.awayScore;
+            const actualTotal = game.homeScore + game.awayScore;
+
+            // Apply shrinkage to get the adjusted values (same pipeline as recommendations)
+            let adjWinProb = prediction.homeWinProb;
+            let adjSpread = prediction.predictedSpread;
+            let adjTotal = prediction.predictedTotal;
+
+            if (config.useShrinkage) {
+              if (odds.homeML != null) {
+                adjWinProb = applyShrinkage(adjWinProb, americanToImpliedProb(odds.homeML), config.shrinkageML);
+              }
+              if (odds.spread != null) {
+                adjSpread = applyShrinkage(adjSpread, odds.spread, config.shrinkageSpread);
+              }
+              if (odds.total != null) {
+                adjTotal = applyShrinkage(adjTotal, odds.total, config.shrinkageTotal);
+              }
+            }
+
+            // ML calibration data
+            if (game.homeScore !== game.awayScore) {
+              mlCalData.push({ prob: adjWinProb, outcome: homeWon ? 1 : 0 });
+            }
+            // Spread calibration data
+            if (odds.spread != null) {
+              const coverProb = spreadCoverProb(adjSpread, odds.spread, config);
+              const homeCovered = actualMargin + odds.spread > 0;
+              spreadCalData.push({ prob: coverProb, outcome: homeCovered ? 1 : 0 });
+            }
+            // Total calibration data
+            if (odds.total != null) {
+              const overProb = totalProb(adjTotal, odds.total, true, config);
+              const wentOver = actualTotal > odds.total;
+              totalCalData.push({ prob: overProb, outcome: wentOver ? 1 : 0 });
+            }
+          }
+
           // Generate recommendations
           const recs = generateRecommendations(prediction, odds, sport);
           for (const rec of recs) {
             const result = gradeRecommendation(rec, game.homeScore, game.awayScore);
+
+            // CLV: model implied prob vs book implied prob (positive = model on right side)
+            let clv = null;
+            if (rec.betType === 'ml') {
+              const bookImplied = americanToImpliedProb(rec.odds);
+              clv = rec.prob - bookImplied;
+            } else if (rec.betType === 'spread') {
+              // For spreads, CLV is the edge over the implied 50% from -110 odds
+              const bookImplied = americanToImpliedProb(rec.odds);
+              clv = rec.prob - bookImplied;
+            } else if (rec.betType === 'total') {
+              const bookImplied = americanToImpliedProb(rec.odds);
+              clv = rec.prob - bookImplied;
+            }
+
             allRecs.push({
               date: game.date,
               home: homeName,
@@ -324,6 +389,7 @@ export const useModelAudit = () => {
               won: result.won,
               push: result.push,
               payout: result.payout,
+              clv,
             });
           }
         } else {
@@ -362,10 +428,35 @@ export const useModelAudit = () => {
         }
       }
 
+      // --- Walk-forward calibration learning (NBA only) ---
+      let calibrationResults = null;
+      if (isNba) {
+        const calParams = {
+          ml: learnCalibrationWalkForward(mlCalData),
+          spread: learnCalibrationWalkForward(spreadCalData),
+          total: learnCalibrationWalkForward(totalCalData),
+        };
+        saveCalibrationParams(calParams);
+        calibrationResults = {
+          params: calParams,
+          sampleSizes: {
+            ml: mlCalData.length,
+            spread: spreadCalData.length,
+            total: totalCalData.length,
+          },
+        };
+      }
+
       // --- Phase 4: Compute aggregates ---
       const record = { wins: 0, losses: 0, pushes: 0 };
       const byTier = {};
       const byType = { ml: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 }, spread: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 }, total: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 } };
+
+      // CLV accumulators
+      let clvSum = 0;
+      let clvPositiveCount = 0;
+      let clvCount = 0;
+      const clvByType = { ml: { sum: 0, positive: 0, count: 0 }, spread: { sum: 0, positive: 0, count: 0 }, total: { sum: 0, positive: 0, count: 0 } };
 
       for (const rec of allRecs) {
         const UNIT = 100;
@@ -373,6 +464,19 @@ export const useModelAudit = () => {
         if (rec.push) record.pushes++;
         else if (rec.won) record.wins++;
         else record.losses++;
+
+        // CLV tracking
+        if (rec.clv !== null) {
+          clvSum += rec.clv;
+          clvCount++;
+          if (rec.clv > 0) clvPositiveCount++;
+          const ct = clvByType[rec.betType];
+          if (ct) {
+            ct.sum += rec.clv;
+            ct.count++;
+            if (rec.clv > 0) ct.positive++;
+          }
+        }
 
         // By star tier
         const starCount = (rec.confidence.stars.match(/★/g) || []).length;
@@ -405,6 +509,20 @@ export const useModelAudit = () => {
         t.roi = t.wagered > 0 ? (t.profit / t.wagered) * 100 : 0;
       }
 
+      // Compute CLV stats
+      const clvStats = {
+        avgCLV: clvCount > 0 ? (clvSum / clvCount) * 100 : 0, // as percentage points
+        clvPositiveRate: clvCount > 0 ? (clvPositiveCount / clvCount) * 100 : 0,
+        clvByType: {},
+      };
+      for (const [type, ct] of Object.entries(clvByType)) {
+        clvStats.clvByType[type] = {
+          avgCLV: ct.count > 0 ? (ct.sum / ct.count) * 100 : 0,
+          clvPositiveRate: ct.count > 0 ? (ct.positive / ct.count) * 100 : 0,
+          count: ct.count,
+        };
+      }
+
       const totalWagered = allRecs.length * 100;
       const totalProfit = allRecs.reduce((sum, r) => sum + r.payout, 0);
 
@@ -420,6 +538,8 @@ export const useModelAudit = () => {
         byTier,
         byType,
         recommendations: allRecs,
+        clvStats,
+        calibrationResults,
       };
 
       setBettingAuditResults(results);

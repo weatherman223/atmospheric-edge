@@ -9,7 +9,9 @@ import {
   spreadCoverProb,
   totalProb,
   getConfidenceTier,
+  applyShrinkage,
 } from '../utils/calculations';
+import { calibrateProb, loadCalibrationParams } from '../utils/calibration';
 import { predictSpread as predictSpreadPure } from '../utils/predictions';
 import { runScoreSimulations } from '../utils/simulations';
 import { getLocalDateString } from '../utils/date';
@@ -463,14 +465,58 @@ export const useAnalyze = () => {
     }
 
     const probSource = useSimulation && simulation ? 'simulation' : 'analytical';
-    const activeWinProbHome = probSource === 'simulation' ? simulation.team1WinRate : p1;
-    const activeWinProbAway = probSource === 'simulation' ? simulation.team2WinRate : p2;
-    const coverProbHome = probSource === 'simulation' && simulation?.spread ? simulation.spread.homeCover : analyticalCoverProb;
-    const coverProbAway = probSource === 'simulation' && simulation?.spread ? simulation.spread.awayCover : (analyticalCoverProb !== null ? 1 - analyticalCoverProb : null);
+    let activeWinProbHome = probSource === 'simulation' ? simulation.team1WinRate : p1;
+    let activeWinProbAway = probSource === 'simulation' ? simulation.team2WinRate : p2;
+    let coverProbHome = probSource === 'simulation' && simulation?.spread ? simulation.spread.homeCover : analyticalCoverProb;
+    let coverProbAway = probSource === 'simulation' && simulation?.spread ? simulation.spread.awayCover : (analyticalCoverProb !== null ? 1 - analyticalCoverProb : null);
     const coverPushProb = probSource === 'simulation' && simulation?.spread ? simulation.spread.push : 0;
-    const overProbActive = probSource === 'simulation' && simulation?.totals ? simulation.totals.over : analyticalOverProb;
-    const underProbActive = probSource === 'simulation' && simulation?.totals ? simulation.totals.under : (analyticalOverProb !== null ? 1 - analyticalOverProb : null);
+    let overProbActive = probSource === 'simulation' && simulation?.totals ? simulation.totals.over : analyticalOverProb;
+    let underProbActive = probSource === 'simulation' && simulation?.totals ? simulation.totals.under : (analyticalOverProb !== null ? 1 - analyticalOverProb : null);
     const totalPushProb = probSource === 'simulation' && simulation?.totals ? simulation.totals.push : 0;
+
+    // Store raw model values before adjustments
+    const rawWinProb = activeWinProbHome;
+    const rawPredSpread = spread;
+    const rawPredTotal = total;
+    let adjustedSpread = spread;
+    let adjustedTotal = total;
+
+    // Apply shrinkage (NBA only) — blend model toward book lines
+    const usingShrinkage = c.useShrinkage;
+    if (usingShrinkage) {
+      if (bookML1) {
+        const bookImplied = americanToImpliedProb(bookML1);
+        activeWinProbHome = applyShrinkage(activeWinProbHome, bookImplied, c.shrinkageML);
+        activeWinProbAway = 1 - activeWinProbHome;
+      }
+      if (bookSpreadVal !== null) {
+        adjustedSpread = applyShrinkage(spread, bookSpreadVal, c.shrinkageSpread);
+        coverProbHome = spreadCoverProb(adjustedSpread, bookSpreadVal, sportConfig[sport]);
+        coverProbAway = 1 - coverProbHome;
+      }
+      if (bookTotalVal !== null) {
+        adjustedTotal = applyShrinkage(total, bookTotalVal, c.shrinkageTotal);
+        overProbActive = totalProb(adjustedTotal, bookTotalVal, true, sportConfig[sport]);
+        underProbActive = 1 - overProbActive;
+      }
+    }
+
+    // Apply calibration (NBA only)
+    const cal = sport === 'nba' ? loadCalibrationParams() : null;
+    if (cal) {
+      if (cal.ml) {
+        activeWinProbHome = calibrateProb(activeWinProbHome, cal.ml);
+        activeWinProbAway = 1 - activeWinProbHome;
+      }
+      if (cal.spread && coverProbHome !== null) {
+        coverProbHome = calibrateProb(coverProbHome, cal.spread);
+        coverProbAway = 1 - coverProbHome;
+      }
+      if (cal.total && overProbActive !== null) {
+        overProbActive = calibrateProb(overProbActive, cal.total);
+        underProbActive = 1 - overProbActive;
+      }
+    }
 
     let ml1 = null, ml2 = null;
     if (bookML1) {
@@ -496,6 +542,7 @@ export const useAnalyze = () => {
       const awayKellyData = kellyStakeCapped(cp2, bookSpreadOdds2, liveBankroll, safeParseFloat(kellyFraction), maxBet);
       spreadA = {
         predictedSpread: spread,
+        adjustedSpread: usingShrinkage ? adjustedSpread : null,
         source: probSource,
         modelCoverProb: analyticalCoverProb !== null ? analyticalCoverProb * 100 : null,
         simCoverProb: simulation?.spread?.homeCover !== undefined && simulation?.spread?.homeCover !== null ? simulation.spread.homeCover * 100 : null,
@@ -528,6 +575,7 @@ export const useAnalyze = () => {
       const underKellyData = kellyStakeCapped(underProbActive, bookUnderOdds, liveBankroll, safeParseFloat(kellyFraction), maxBet);
       totalA = {
         predictedTotal: total,
+        adjustedTotal: usingShrinkage ? adjustedTotal : null,
         source: probSource,
         modelOverProb: analyticalOverProb !== null ? analyticalOverProb * 100 : null,
         simOverProb: simulation?.totals?.over !== undefined && simulation?.totals?.over !== null ? simulation.totals.over * 100 : null,
@@ -790,7 +838,15 @@ export const useAnalyze = () => {
       maxBet,
       probabilityBreakdown,
       simulationSummary: simulation,
-      probabilitySource: probSource
+      probabilitySource: probSource,
+      // Shrinkage info (NBA only)
+      shrinkageApplied: usingShrinkage,
+      rawWinProb: rawWinProb * 100,
+      rawPredSpread: rawPredSpread,
+      rawPredTotal: rawPredTotal,
+      adjustedPredSpread: usingShrinkage ? adjustedSpread : null,
+      adjustedPredTotal: usingShrinkage ? adjustedTotal : null,
+      calibrationApplied: !!cal,
     };
   };
 

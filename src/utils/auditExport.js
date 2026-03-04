@@ -119,6 +119,45 @@ export function generateAuditMarkdown(auditResults, bettingAuditResults) {
       lines.push('');
     }
 
+    // CLV stats
+    if (bettingAuditResults.clvStats) {
+      const clv = bettingAuditResults.clvStats;
+      lines.push('### Closing Line Value (CLV)');
+      lines.push('');
+      lines.push('Positive CLV = model found real edges vs the market.');
+      lines.push('');
+      lines.push(`| Metric | Value |`);
+      lines.push(`|--------|-------|`);
+      lines.push(`| Avg CLV | ${clv.avgCLV >= 0 ? '+' : ''}${clv.avgCLV.toFixed(2)}% |`);
+      lines.push(`| CLV+ Rate | ${clv.clvPositiveRate.toFixed(1)}% |`);
+
+      for (const [type, ct] of Object.entries(clv.clvByType)) {
+        if (ct.count > 0) {
+          lines.push(`| ${type.toUpperCase()} Avg CLV | ${ct.avgCLV >= 0 ? '+' : ''}${ct.avgCLV.toFixed(2)}% (${ct.clvPositiveRate.toFixed(0)}% positive, ${ct.count} recs) |`);
+        }
+      }
+      lines.push('');
+    }
+
+    // Calibration results
+    if (bettingAuditResults.calibrationResults) {
+      const cal = bettingAuditResults.calibrationResults;
+      lines.push('### Calibration Parameters (Walk-Forward)');
+      lines.push('');
+      lines.push('Learned from first 60% of games, saved to localStorage for live analysis.');
+      lines.push('');
+      lines.push('| Type | a | b | Games |');
+      lines.push('|------|---|---|-------|');
+
+      for (const type of ['ml', 'spread', 'total']) {
+        const p = cal.params[type];
+        const n = cal.sampleSizes[type];
+        const identity = p.a === 1 && p.b === 0 ? ' (identity)' : '';
+        lines.push(`| ${type.toUpperCase()} | ${p.a.toFixed(4)} | ${p.b.toFixed(4)} | ${n}${identity} |`);
+      }
+      lines.push('');
+    }
+
     // Recommendation log
     if (bettingAuditResults.recommendations?.length > 0) {
       lines.push('### Recommendation Log');

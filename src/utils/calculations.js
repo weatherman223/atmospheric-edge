@@ -178,6 +178,19 @@ export const calculateCLV = (openingOdds, closingOdds) => {
 };
 
 /**
+ * Shrink a model value toward a book value
+ * result = bookValue + k * (modelValue - bookValue)
+ * k=1 means pure model, k=0 means pure book
+ * @param {number} modelValue - Model's prediction
+ * @param {number} bookValue - Book's line/implied prob
+ * @param {number} k - Shrinkage coefficient (0-1)
+ * @returns {number} Blended value
+ */
+export const applyShrinkage = (modelValue, bookValue, k) => {
+  return bookValue + k * (modelValue - bookValue);
+};
+
+/**
  * Get confidence tier based on expected value
  * @param {number} ev - Expected value as percentage (e.g., 5 for 5%)
  * @returns {{stars: string, label: string, color: string, bg: string}}
