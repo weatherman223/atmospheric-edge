@@ -528,6 +528,11 @@ const AnalyzeTab = () => {
 
               <div className={cardStyle}>
                 <h3 className="font-bold text-sm mb-2">📊 Spread</h3>
+                {sportConfig[sport]?.weakSpread && (
+                  <p className="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1 mb-1">
+                    Spread model is weak for {sportConfig[sport].name} (high MAE) — take with a grain of salt
+                  </p>
+                )}
                 <p className="text-[11px] text-gray-500">
                   {analysis.spreadAnalysis
                     ? `Probabilities from ${analysis.spreadAnalysis.source === 'simulation' ? 'simulation output' : 'analytical model'}${analysis.spreadAnalysis.pushProb ? ` • Push: ${analysis.spreadAnalysis.pushProb.toFixed(1)}%` : ''}`

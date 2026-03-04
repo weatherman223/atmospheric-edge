@@ -10,6 +10,7 @@ import {
   totalProb,
   getConfidenceTier,
 } from '../utils/calculations';
+import { predictSpread as predictSpreadPure } from '../utils/predictions';
 import { runScoreSimulations } from '../utils/simulations';
 import { getLocalDateString } from '../utils/date';
 import { matchTeamName } from '../utils/teamMatcher';
@@ -110,7 +111,7 @@ export const useAnalyze = () => {
   // === CORE FUNCTIONS ===
   const getAdjustedElo = (baseElo, injury, rest, motivation) => baseElo + injury + rest + motivation;
 
-  const predictSpread = (t1Elo, t2Elo, ha) => -((t1Elo + ha - t2Elo) * sportConfig[sport].spreadMultiplier);
+  const predictSpread = (t1Elo, t2Elo, ha) => predictSpreadPure(t1Elo, t2Elo, ha, sportConfig[sport].spreadMultiplier);
 
   // Fetch Today's Games from NCAA API for D3 sports
   const fetchNCAATodaysGames = async (dateOverride = gamePickerDate) => {

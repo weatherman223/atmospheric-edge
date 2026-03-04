@@ -4,7 +4,7 @@
 // D3 sports: Use NCAA API instead of ESPN, lower home advantage due to smaller gyms
 export const sportConfig = {
   nfl: { name: 'NFL 2025', homeAdvantage: 48, kFactor: 20, avgScore: 23, avgTotal: 46, spreadMultiplier: 0.04, scoringVar: 14, ratingImpact: 1.0, marginMult: 1 },
-  nba: { name: 'NBA 2025-26', homeAdvantage: 30, kFactor: 20, avgScore: 118, avgTotal: 236, spreadMultiplier: 0.03, scoringVar: 12, ratingImpact: 0.6, marginMult: 1 },
+  nba: { name: 'NBA 2025-26', homeAdvantage: 40, kFactor: 20, avgScore: 115, avgTotal: 230, spreadMultiplier: 0.035, scoringVar: 15, ratingImpact: 0.6, marginMult: 1 },
   nhl: { name: 'NHL 2025-26', homeAdvantage: 22, kFactor: 22, avgScore: 3.1, avgTotal: 6.2, spreadMultiplier: 0.015, scoringVar: 1.5, ratingImpact: 0.8, marginMult: 4.5 },
   cfb: { name: 'CFB 2025', homeAdvantage: 55, kFactor: 18, avgScore: 28, avgTotal: 56, spreadMultiplier: 0.035, scoringVar: 16, ratingImpact: 1.0, marginMult: 1, marginCap: 21 },
   cbb: { name: 'CBB 2025-26', homeAdvantage: 35, kFactor: 20, avgScore: 72, avgTotal: 144, spreadMultiplier: 0.035, scoringVar: 10, ratingImpact: 0.6, marginMult: 1, marginCap: 15 },

@@ -183,25 +183,25 @@ export const calculateCLV = (openingOdds, closingOdds) => {
  * @returns {{stars: string, label: string, color: string, bg: string}}
  */
 export const getConfidenceTier = (ev) => {
-  if (ev >= 10) return {
+  if (ev >= 15) return {
     stars: '★★★★★',
     label: 'ELITE',
     color: 'text-yellow-500',
     bg: 'bg-yellow-50 border-yellow-400'
   };
-  if (ev >= 6) return {
+  if (ev >= 8) return {
     stars: '★★★★☆',
     label: 'STRONG',
     color: 'text-emerald-600',
     bg: 'bg-emerald-50 border-emerald-400'
   };
-  if (ev >= 3) return {
+  if (ev >= 4) return {
     stars: '★★★☆☆',
     label: 'GOOD',
     color: 'text-blue-600',
     bg: 'bg-blue-50 border-blue-400'
   };
-  if (ev >= 1) return {
+  if (ev >= 2) return {
     stars: '★★☆☆☆',
     label: 'LEAN',
     color: 'text-gray-600',

@@ -1,5 +1,6 @@
 import { useApp } from './context/AppContext';
 import AnalyzeTab from './components/AnalyzeTab';
+import AuditTab from './components/AuditTab';
 import BankrollTab from './components/BankrollTab';
 import RatingsTab from './components/RatingsTab';
 import TrackerTab from './components/TrackerTab';
@@ -28,9 +29,9 @@ const SportsBettingModelPro = () => {
         </div>
 
         <div className="flex gap-1 justify-center flex-wrap">
-          {['analyze', 'tracker', 'ratings', 'results', 'bankroll'].map(tab => (
+          {['analyze', 'tracker', 'ratings', 'results', 'audit', 'bankroll'].map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white hover:bg-white/20'}`}>
-              {tab === 'analyze' && '🎯 Analyze'}{tab === 'tracker' && '📈 Tracker'}{tab === 'ratings' && '📊 Ratings'}{tab === 'results' && '📝 Results'}{tab === 'bankroll' && '💰 Bankroll'}
+              {tab === 'analyze' && '🎯 Analyze'}{tab === 'tracker' && '📈 Tracker'}{tab === 'ratings' && '📊 Ratings'}{tab === 'results' && '📝 Results'}{tab === 'audit' && '🔍 Audit'}{tab === 'bankroll' && '💰 Bankroll'}
             </button>
           ))}
         </div>
@@ -42,6 +43,8 @@ const SportsBettingModelPro = () => {
         {activeTab === 'ratings' && <RatingsTab />}
 
         {activeTab === 'results' && <ResultsTab />}
+
+        {activeTab === 'audit' && <AuditTab />}
 
         {activeTab === 'bankroll' && <BankrollTab />}
 
