@@ -288,11 +288,24 @@ export const useModelAudit = () => {
       let gamesWithOdds = 0;
       let gamesWithoutOdds = 0;
 
-      // Calibration data collection (NBA only, ALL games with odds — not just recommended)
+      // Walk-forward calibration (NBA only):
+      // Pass 1 (first 60%): collect calibration data, generate recs WITHOUT calibration
+      // Pass 2 (last 40%): apply learned calibration when generating recs
       const isNba = sport === 'nba';
       const mlCalData = [];
       const spreadCalData = [];
       const totalCalData = [];
+
+      // Count games with odds to determine the 60% split point
+      const gamesWithOddsIndices = [];
+      for (let i = 0; i < completedGames.length; i++) {
+        const odds = completedGames[i].id ? oddsMap.get(String(completedGames[i].id)) : null;
+        if (odds) gamesWithOddsIndices.push(i);
+      }
+      const calSplitOddsIdx = Math.floor(gamesWithOddsIndices.length * 0.6);
+      const calSplitGameIdx = gamesWithOddsIndices[calSplitOddsIdx] ?? completedGames.length;
+
+      let learnedCalParams = null;
 
       for (let i = 0; i < completedGames.length; i++) {
         if (bettingAbortRef.current) { setBettingAuditStatus('idle'); return; }
@@ -320,59 +333,51 @@ export const useModelAudit = () => {
             const actualMargin = game.homeScore - game.awayScore;
             const actualTotal = game.homeScore + game.awayScore;
 
-            // Apply shrinkage to get the adjusted values (same pipeline as recommendations)
             let adjWinProb = prediction.homeWinProb;
             let adjSpread = prediction.predictedSpread;
             let adjTotal = prediction.predictedTotal;
 
             if (config.useShrinkage) {
-              if (odds.homeML != null) {
-                adjWinProb = applyShrinkage(adjWinProb, americanToImpliedProb(odds.homeML), config.shrinkageML);
-              }
-              if (odds.spread != null) {
-                adjSpread = applyShrinkage(adjSpread, odds.spread, config.shrinkageSpread);
-              }
-              if (odds.total != null) {
-                adjTotal = applyShrinkage(adjTotal, odds.total, config.shrinkageTotal);
-              }
+              if (odds.homeML != null) adjWinProb = applyShrinkage(adjWinProb, americanToImpliedProb(odds.homeML), config.shrinkageML);
+              if (odds.spread != null) adjSpread = applyShrinkage(adjSpread, odds.spread, config.shrinkageSpread);
+              if (odds.total != null) adjTotal = applyShrinkage(adjTotal, odds.total, config.shrinkageTotal);
             }
 
-            // ML calibration data
             if (game.homeScore !== game.awayScore) {
               mlCalData.push({ prob: adjWinProb, outcome: homeWon ? 1 : 0 });
             }
-            // Spread calibration data
             if (odds.spread != null) {
               const coverProb = spreadCoverProb(adjSpread, odds.spread, config);
               const homeCovered = actualMargin + odds.spread > 0;
               spreadCalData.push({ prob: coverProb, outcome: homeCovered ? 1 : 0 });
             }
-            // Total calibration data
             if (odds.total != null) {
               const overProb = totalProb(adjTotal, odds.total, true, config);
               const wentOver = actualTotal > odds.total;
               totalCalData.push({ prob: overProb, outcome: wentOver ? 1 : 0 });
             }
+
+            // At the split point, learn calibration from first 60%
+            if (!learnedCalParams && i >= calSplitGameIdx) {
+              learnedCalParams = {
+                ml: learnCalibrationWalkForward(mlCalData, 1.0), // use all collected so far (they ARE the train set)
+                spread: learnCalibrationWalkForward(spreadCalData, 1.0),
+                total: learnCalibrationWalkForward(totalCalData, 1.0),
+              };
+            }
           }
 
-          // Generate recommendations
-          const recs = generateRecommendations(prediction, odds, sport);
+          // Generate recommendations — apply calibration only after split point (NBA)
+          const calForRecs = (isNba && learnedCalParams) ? learnedCalParams : undefined;
+          const recs = generateRecommendations(prediction, odds, sport, { calibrationParams: calForRecs });
+          const inCalibrationWindow = isNba && learnedCalParams;
+
           for (const rec of recs) {
             const result = gradeRecommendation(rec, game.homeScore, game.awayScore);
 
-            // CLV: model implied prob vs book implied prob (positive = model on right side)
-            let clv = null;
-            if (rec.betType === 'ml') {
-              const bookImplied = americanToImpliedProb(rec.odds);
-              clv = rec.prob - bookImplied;
-            } else if (rec.betType === 'spread') {
-              // For spreads, CLV is the edge over the implied 50% from -110 odds
-              const bookImplied = americanToImpliedProb(rec.odds);
-              clv = rec.prob - bookImplied;
-            } else if (rec.betType === 'total') {
-              const bookImplied = americanToImpliedProb(rec.odds);
-              clv = rec.prob - bookImplied;
-            }
+            // Edge vs implied: model prob minus book implied prob
+            const bookImplied = americanToImpliedProb(rec.odds);
+            const edge = rec.prob - bookImplied;
 
             allRecs.push({
               date: game.date,
@@ -389,7 +394,8 @@ export const useModelAudit = () => {
               won: result.won,
               push: result.push,
               payout: result.payout,
-              clv,
+              edge,
+              calibrated: inCalibrationWindow,
             });
           }
         } else {
@@ -428,17 +434,12 @@ export const useModelAudit = () => {
         }
       }
 
-      // --- Walk-forward calibration learning (NBA only) ---
+      // Save learned calibration for live analysis
       let calibrationResults = null;
-      if (isNba) {
-        const calParams = {
-          ml: learnCalibrationWalkForward(mlCalData),
-          spread: learnCalibrationWalkForward(spreadCalData),
-          total: learnCalibrationWalkForward(totalCalData),
-        };
-        saveCalibrationParams(calParams);
+      if (isNba && learnedCalParams) {
+        saveCalibrationParams(learnedCalParams);
         calibrationResults = {
-          params: calParams,
+          params: learnedCalParams,
           sampleSizes: {
             ml: mlCalData.length,
             spread: spreadCalData.length,
@@ -451,32 +452,42 @@ export const useModelAudit = () => {
       const record = { wins: 0, losses: 0, pushes: 0 };
       const byTier = {};
       const byType = { ml: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 }, spread: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 }, total: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 } };
+      const byTypeTier = {}; // type×tier cross-cut
 
-      // CLV accumulators
-      let clvSum = 0;
-      let clvPositiveCount = 0;
-      let clvCount = 0;
-      const clvByType = { ml: { sum: 0, positive: 0, count: 0 }, spread: { sum: 0, positive: 0, count: 0 }, total: { sum: 0, positive: 0, count: 0 } };
+      // Edge vs implied accumulators
+      let edgeSum = 0;
+      let edgePositiveCount = 0;
+      let edgeCount = 0;
+      const edgeByType = { ml: { sum: 0, positive: 0, count: 0 }, spread: { sum: 0, positive: 0, count: 0 }, total: { sum: 0, positive: 0, count: 0 } };
+
+      // Pre/post calibration split
+      const calSplit = { pre: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 }, post: { count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 } };
 
       for (const rec of allRecs) {
         const UNIT = 100;
-        // Overall record
         if (rec.push) record.pushes++;
         else if (rec.won) record.wins++;
         else record.losses++;
 
-        // CLV tracking
-        if (rec.clv !== null) {
-          clvSum += rec.clv;
-          clvCount++;
-          if (rec.clv > 0) clvPositiveCount++;
-          const ct = clvByType[rec.betType];
-          if (ct) {
-            ct.sum += rec.clv;
-            ct.count++;
-            if (rec.clv > 0) ct.positive++;
-          }
+        // Edge tracking
+        edgeSum += rec.edge;
+        edgeCount++;
+        if (rec.edge > 0) edgePositiveCount++;
+        const et = edgeByType[rec.betType];
+        if (et) {
+          et.sum += rec.edge;
+          et.count++;
+          if (rec.edge > 0) et.positive++;
         }
+
+        // Pre/post calibration
+        const bucket = rec.calibrated ? calSplit.post : calSplit.pre;
+        bucket.count++;
+        if (rec.push) bucket.pushes++;
+        else if (rec.won) bucket.wins++;
+        else bucket.losses++;
+        bucket.wagered += UNIT;
+        bucket.profit += rec.payout;
 
         // By star tier
         const starCount = (rec.confidence.stars.match(/★/g) || []).length;
@@ -499,27 +510,45 @@ export const useModelAudit = () => {
         else bt.losses++;
         bt.wagered += UNIT;
         bt.profit += rec.payout;
+
+        // Type × Tier cross-cut
+        const ttKey = `${rec.betType}_${starCount}`;
+        if (!byTypeTier[ttKey]) {
+          byTypeTier[ttKey] = { betType: rec.betType, stars: starCount, count: 0, wins: 0, losses: 0, pushes: 0, wagered: 0, profit: 0 };
+        }
+        const tt = byTypeTier[ttKey];
+        tt.count++;
+        if (rec.push) tt.pushes++;
+        else if (rec.won) tt.wins++;
+        else tt.losses++;
+        tt.wagered += UNIT;
+        tt.profit += rec.payout;
       }
 
-      // Add ROI to each tier/type
+      // Add ROI to each aggregate
       for (const t of Object.values(byTier)) {
         t.roi = t.wagered > 0 ? (t.profit / t.wagered) * 100 : 0;
       }
       for (const t of Object.values(byType)) {
         t.roi = t.wagered > 0 ? (t.profit / t.wagered) * 100 : 0;
       }
+      for (const t of Object.values(byTypeTier)) {
+        t.roi = t.wagered > 0 ? (t.profit / t.wagered) * 100 : 0;
+      }
+      calSplit.pre.roi = calSplit.pre.wagered > 0 ? (calSplit.pre.profit / calSplit.pre.wagered) * 100 : 0;
+      calSplit.post.roi = calSplit.post.wagered > 0 ? (calSplit.post.profit / calSplit.post.wagered) * 100 : 0;
 
-      // Compute CLV stats
-      const clvStats = {
-        avgCLV: clvCount > 0 ? (clvSum / clvCount) * 100 : 0, // as percentage points
-        clvPositiveRate: clvCount > 0 ? (clvPositiveCount / clvCount) * 100 : 0,
-        clvByType: {},
+      // Compute edge stats
+      const edgeStats = {
+        avgEdge: edgeCount > 0 ? (edgeSum / edgeCount) * 100 : 0,
+        edgePositiveRate: edgeCount > 0 ? (edgePositiveCount / edgeCount) * 100 : 0,
+        edgeByType: {},
       };
-      for (const [type, ct] of Object.entries(clvByType)) {
-        clvStats.clvByType[type] = {
-          avgCLV: ct.count > 0 ? (ct.sum / ct.count) * 100 : 0,
-          clvPositiveRate: ct.count > 0 ? (ct.positive / ct.count) * 100 : 0,
-          count: ct.count,
+      for (const [type, et] of Object.entries(edgeByType)) {
+        edgeStats.edgeByType[type] = {
+          avgEdge: et.count > 0 ? (et.sum / et.count) * 100 : 0,
+          edgePositiveRate: et.count > 0 ? (et.positive / et.count) * 100 : 0,
+          count: et.count,
         };
       }
 
@@ -537,9 +566,11 @@ export const useModelAudit = () => {
         roi: totalWagered > 0 ? (totalProfit / totalWagered) * 100 : 0,
         byTier,
         byType,
+        byTypeTier,
         recommendations: allRecs,
-        clvStats,
+        edgeStats,
         calibrationResults,
+        calSplit: isNba ? calSplit : null,
       };
 
       setBettingAuditResults(results);

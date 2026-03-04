@@ -119,22 +119,65 @@ export function generateAuditMarkdown(auditResults, bettingAuditResults) {
       lines.push('');
     }
 
-    // CLV stats
-    if (bettingAuditResults.clvStats) {
-      const clv = bettingAuditResults.clvStats;
-      lines.push('### Closing Line Value (CLV)');
+    // Edge vs Implied stats
+    if (bettingAuditResults.edgeStats) {
+      const edge = bettingAuditResults.edgeStats;
+      lines.push('### Edge vs Implied');
       lines.push('');
-      lines.push('Positive CLV = model found real edges vs the market.');
+      lines.push('Model probability minus book implied probability (tautologically positive for +EV recs).');
       lines.push('');
       lines.push(`| Metric | Value |`);
       lines.push(`|--------|-------|`);
-      lines.push(`| Avg CLV | ${clv.avgCLV >= 0 ? '+' : ''}${clv.avgCLV.toFixed(2)}% |`);
-      lines.push(`| CLV+ Rate | ${clv.clvPositiveRate.toFixed(1)}% |`);
+      lines.push(`| Avg Edge | ${edge.avgEdge >= 0 ? '+' : ''}${edge.avgEdge.toFixed(2)}% |`);
+      lines.push(`| Edge+ Rate | ${edge.edgePositiveRate.toFixed(1)}% |`);
 
-      for (const [type, ct] of Object.entries(clv.clvByType)) {
-        if (ct.count > 0) {
-          lines.push(`| ${type.toUpperCase()} Avg CLV | ${ct.avgCLV >= 0 ? '+' : ''}${ct.avgCLV.toFixed(2)}% (${ct.clvPositiveRate.toFixed(0)}% positive, ${ct.count} recs) |`);
+      for (const [type, et] of Object.entries(edge.edgeByType)) {
+        if (et.count > 0) {
+          lines.push(`| ${type.toUpperCase()} Avg Edge | ${et.avgEdge >= 0 ? '+' : ''}${et.avgEdge.toFixed(2)}% (${et.edgePositiveRate.toFixed(0)}% positive, ${et.count} recs) |`);
         }
+      }
+      lines.push('');
+    }
+
+    // Type × Tier cross-cut
+    if (bettingAuditResults.byTypeTier) {
+      const ttRows = Object.values(bettingAuditResults.byTypeTier)
+        .filter(tt => tt.count > 0)
+        .sort((a, b) => a.betType.localeCompare(b.betType) || b.stars - a.stars);
+
+      if (ttRows.length > 0) {
+        const typeLabels = { ml: 'ML', spread: 'Spread', total: 'Total' };
+        lines.push('### Type × Tier Breakdown');
+        lines.push('');
+        lines.push('| Type | Tier | Recs | Record | Win% | Profit | ROI |');
+        lines.push('|------|------|------|--------|------|--------|-----|');
+
+        for (const tt of ttRows) {
+          const winPct = (tt.wins + tt.losses) > 0
+            ? ((tt.wins / (tt.wins + tt.losses)) * 100).toFixed(1)
+            : '0.0';
+          const profit = `${tt.profit >= 0 ? '+' : ''}$${Math.round(tt.profit).toLocaleString()}`;
+          const roi = `${tt.roi >= 0 ? '+' : ''}${tt.roi.toFixed(1)}%`;
+          lines.push(`| ${typeLabels[tt.betType] || tt.betType} | ${'★'.repeat(tt.stars)}${'☆'.repeat(5 - tt.stars)} | ${tt.count} | ${tt.wins}-${tt.losses}-${tt.pushes} | ${winPct}% | ${profit} | ${roi} |`);
+        }
+        lines.push('');
+      }
+    }
+
+    // Pre/Post Calibration Split
+    if (bettingAuditResults.calSplit) {
+      const cal = bettingAuditResults.calSplit;
+      lines.push('### Calibration Impact (Walk-Forward)');
+      lines.push('');
+      lines.push('Pre-calibration (first 60% of games) vs post-calibration (last 40%) performance.');
+      lines.push('');
+      lines.push('| Window | Recs | Record | Wagered | Profit | ROI |');
+      lines.push('|--------|------|--------|---------|--------|-----|');
+
+      for (const [label, data] of [['Pre-Cal (60%)', cal.pre], ['Post-Cal (40%)', cal.post]]) {
+        const profit = `${data.profit >= 0 ? '+' : ''}$${Math.round(data.profit).toLocaleString()}`;
+        const roi = `${data.roi >= 0 ? '+' : ''}${data.roi.toFixed(1)}%`;
+        lines.push(`| ${label} | ${data.count} | ${data.wins}-${data.losses}-${data.pushes} | $${data.wagered.toLocaleString()} | ${profit} | ${roi} |`);
       }
       lines.push('');
     }

@@ -14,6 +14,7 @@ export const sportConfig = {
     shrinkageTotal: 0.45,
     // Volume controls
     minEV: 8,
+    minEVTotal: 12,  // totals need higher bar (15.8 pt MAE, -8.6% ROI in backtest)
     maxBetsPerGame: 1,
     blockCorrelatedBets: true,
   },

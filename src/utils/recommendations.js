@@ -35,6 +35,7 @@ const filterCorrelatedBets = (recs) => {
 export const generateRecommendations = (prediction, odds, sportKey, { minEV: minEVOverride, calibrationParams } = {}) => {
   const config = sportConfig[sportKey];
   const minEV = minEVOverride ?? config.minEV ?? 3;
+  const minEVTotal = config.minEVTotal ?? minEV;  // totals can have a higher bar
   let recs = [];
   let { homeWinProb, predictedSpread, predictedTotal } = prediction;
   let awayWinProb = 1 - homeWinProb;
@@ -105,11 +106,11 @@ export const generateRecommendations = (prediction, odds, sportKey, { minEV: min
     const underOdds = odds.underOdds ?? -110;
 
     const overEV = calculateEV(overProb, overOdds) * 100;
-    if (overEV >= minEV) {
+    if (overEV >= minEVTotal) {
       recs.push({ betType: 'total', side: 'over', ev: overEV, confidence: getConfidenceTier(overEV), odds: overOdds, prob: overProb, line: odds.total });
     }
     const underEV = calculateEV(underProb, underOdds) * 100;
-    if (underEV >= minEV) {
+    if (underEV >= minEVTotal) {
       recs.push({ betType: 'total', side: 'under', ev: underEV, confidence: getConfidenceTier(underEV), odds: underOdds, prob: underProb, line: odds.total });
     }
   }

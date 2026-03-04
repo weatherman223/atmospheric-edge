@@ -519,41 +519,137 @@ const AuditTab = () => {
             })}
           </div>
 
-          {/* CLV Stats */}
-          {bettingAuditResults.clvStats && (
+          {/* Edge vs Implied */}
+          {bettingAuditResults.edgeStats && (
             <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden">
               <div className="p-3 border-b border-white/10">
-                <h3 className="text-sm font-bold text-white">Closing Line Value (CLV)</h3>
-                <p className="text-xs text-blue-300/60">Positive CLV = model found real edges vs the market</p>
+                <h3 className="text-sm font-bold text-white">Edge vs Implied</h3>
+                <p className="text-xs text-blue-300/60">Model probability minus book implied probability (tautologically positive for +EV recs)</p>
               </div>
               <div className="p-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
                   <div>
-                    <p className="text-xs text-blue-200">Avg CLV</p>
-                    <p className={`text-lg font-bold ${bettingAuditResults.clvStats.avgCLV >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {bettingAuditResults.clvStats.avgCLV >= 0 ? '+' : ''}{bettingAuditResults.clvStats.avgCLV.toFixed(2)}%
+                    <p className="text-xs text-blue-200">Avg Edge</p>
+                    <p className={`text-lg font-bold ${bettingAuditResults.edgeStats.avgEdge >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {bettingAuditResults.edgeStats.avgEdge >= 0 ? '+' : ''}{bettingAuditResults.edgeStats.avgEdge.toFixed(2)}%
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-blue-200">CLV+ Rate</p>
-                    <p className={`text-lg font-bold ${bettingAuditResults.clvStats.clvPositiveRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {bettingAuditResults.clvStats.clvPositiveRate.toFixed(1)}%
+                    <p className="text-xs text-blue-200">Edge+ Rate</p>
+                    <p className={`text-lg font-bold ${bettingAuditResults.edgeStats.edgePositiveRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {bettingAuditResults.edgeStats.edgePositiveRate.toFixed(1)}%
                     </p>
                   </div>
                   {['ml', 'spread', 'total'].map((type) => {
-                    const ct = bettingAuditResults.clvStats.clvByType[type];
-                    if (!ct || ct.count === 0) return null;
+                    const et = bettingAuditResults.edgeStats.edgeByType[type];
+                    if (!et || et.count === 0) return null;
                     return (
                       <div key={type}>
-                        <p className="text-xs text-blue-200 uppercase">{type} CLV</p>
-                        <p className={`text-sm font-bold ${ct.avgCLV >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {ct.avgCLV >= 0 ? '+' : ''}{ct.avgCLV.toFixed(2)}%
+                        <p className="text-xs text-blue-200 uppercase">{type} Edge</p>
+                        <p className={`text-sm font-bold ${et.avgEdge >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {et.avgEdge >= 0 ? '+' : ''}{et.avgEdge.toFixed(2)}%
                         </p>
-                        <p className="text-xs text-blue-300/60">{ct.clvPositiveRate.toFixed(0)}% positive ({ct.count})</p>
+                        <p className="text-xs text-blue-300/60">{et.edgePositiveRate.toFixed(0)}% positive ({et.count})</p>
                       </div>
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Type × Tier Cross-Cut */}
+          {bettingAuditResults.byTypeTier && Object.keys(bettingAuditResults.byTypeTier).length > 0 && (
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-3 border-b border-white/10">
+                <h3 className="text-sm font-bold text-white">Type × Tier Breakdown</h3>
+                <p className="text-xs text-blue-300/60">Performance by bet type and star tier</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="text-blue-200 bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2">Type</th>
+                      <th className="px-3 py-2">Tier</th>
+                      <th className="px-3 py-2">Recs</th>
+                      <th className="px-3 py-2">Record</th>
+                      <th className="px-3 py-2">Win%</th>
+                      <th className="px-3 py-2">Profit</th>
+                      <th className="px-3 py-2">ROI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.values(bettingAuditResults.byTypeTier)
+                      .sort((a, b) => a.betType.localeCompare(b.betType) || b.stars - a.stars)
+                      .map((tt) => {
+                        const winPct = (tt.wins + tt.losses) > 0 ? ((tt.wins / (tt.wins + tt.losses)) * 100) : 0;
+                        const typeLabel = tt.betType === 'ml' ? 'ML' : tt.betType === 'spread' ? 'Spread' : 'Total';
+                        return (
+                          <tr
+                            key={`${tt.betType}_${tt.stars}`}
+                            className={`border-t border-white/5 ${tt.roi > 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}
+                          >
+                            <td className="px-3 py-2 text-white">{typeLabel}</td>
+                            <td className="px-3 py-2 text-yellow-400 whitespace-nowrap">
+                              {'★'.repeat(tt.stars)}{'☆'.repeat(5 - tt.stars)}
+                            </td>
+                            <td className="px-3 py-2 text-white">{tt.count}</td>
+                            <td className="px-3 py-2 text-white">{tt.wins}-{tt.losses}-{tt.pushes}</td>
+                            <td className="px-3 py-2 text-blue-100">{winPct.toFixed(1)}%</td>
+                            <td className={`px-3 py-2 font-medium ${tt.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {tt.profit >= 0 ? '+' : ''}${Math.round(tt.profit).toLocaleString()}
+                            </td>
+                            <td className={`px-3 py-2 font-medium ${tt.roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {tt.roi >= 0 ? '+' : ''}{tt.roi.toFixed(1)}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Pre/Post Calibration Split */}
+          {bettingAuditResults.calSplit && (
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden">
+              <div className="p-3 border-b border-white/10">
+                <h3 className="text-sm font-bold text-white">Calibration Impact (Walk-Forward)</h3>
+                <p className="text-xs text-blue-300/60">Pre-calibration (first 60%) vs post-calibration (last 40%) performance</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="text-blue-200 bg-white/5">
+                    <tr>
+                      <th className="px-3 py-2">Window</th>
+                      <th className="px-3 py-2">Recs</th>
+                      <th className="px-3 py-2">Record</th>
+                      <th className="px-3 py-2">Wagered</th>
+                      <th className="px-3 py-2">Profit</th>
+                      <th className="px-3 py-2">ROI</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      { label: 'Pre-Calibration (60%)', data: bettingAuditResults.calSplit.pre },
+                      { label: 'Post-Calibration (40%)', data: bettingAuditResults.calSplit.post },
+                    ].map(({ label, data }) => (
+                      <tr key={label} className={`border-t border-white/5 ${data.roi > 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                        <td className="px-3 py-2 text-white whitespace-nowrap">{label}</td>
+                        <td className="px-3 py-2 text-white">{data.count}</td>
+                        <td className="px-3 py-2 text-white">{data.wins}-{data.losses}-{data.pushes}</td>
+                        <td className="px-3 py-2 text-blue-100">${data.wagered.toLocaleString()}</td>
+                        <td className={`px-3 py-2 font-medium ${data.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {data.profit >= 0 ? '+' : ''}${Math.round(data.profit).toLocaleString()}
+                        </td>
+                        <td className={`px-3 py-2 font-medium ${data.roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {data.roi >= 0 ? '+' : ''}{data.roi.toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
